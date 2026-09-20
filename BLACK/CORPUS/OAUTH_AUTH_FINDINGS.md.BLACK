@@ -1,0 +1,310 @@
+# WTR-LAB.COM — OAuth & Auth Surface Addendum
+
+**Target:** `wtr-lab.com` (production, owned / consented)
+**Tanggal:** 2026-08-23
+**Auth library:** Better Auth (Next.js v15)
+
+---
+
+## 1. Executive Summary
+
+WTR-LAB pakai **Better Auth** untuk auth, dengan konfigurasi:
+- Email/password: **DISABLED** (`EMAIL_PASSWORD_DISABLED`, `EMAIL_PASSWORD_SIGN_UP_DISABLED`)
+- Magic link (email-based): **BROKEN — return HTTP 500** (SMTP/ProtonMail misconfigured)
+- Social: Google, Discord, Patreon, GitHub aktif
+
+Assessment menemukan **8 endpoint auth yang aktif** dan beberapa info leak / misconfiguration.
+
+---
+
+## 2. Endpoint Inventory
+
+| Method | Path | Status (no auth) | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/auth/get-session` | 200 `null` | Returns current session |
+| GET | `/api/auth/ok` | 200 `{"ok":true}` | Healthcheck |
+| POST | `/api/auth/sign-in/email` | 400 `EMAIL_PASSWORD_DISABLED` | Disabled |
+| POST | `/api/auth/sign-up/email` | 400 `EMAIL_PASSWORD_SIGN_UP_DISABLED` | Disabled |
+| POST | `/api/auth/sign-in/magic-link` | **500 Internal Server Error** | Broken |
+| GET | `/api/auth/magic-link/verify?token=X` | 400 (butuh token) | Token validation |
+| POST | `/api/auth/sign-in/social` | 200 (return OAuth URL) | Init flow |
+| GET | `/api/auth/callback/[provider]` | 302 / 404 | OAuth callback (varied behavior) |
+| GET | `/api/auth/oauth2/callback/patreon` | 302 (state_mismatch) | Patreon only — beda path |
+| GET | `/api/auth/error?error=X` | 200 (HTML page) | Error page |
+| POST | `/api/auth/sign-out` | 415 (butuh `Content-Type: application/json`) | Sign out |
+| POST | `/api/auth/migrate-session` | 200 `{migrated:false, reason:"no old session"}` | Session migration |
+| GET | `/api/auth/list-accounts` | 401 | User accounts list |
+| GET | `/api/auth/list-sessions` | 401 | Active sessions |
+| POST | `/api/auth/unlink-account` | 400 (no provider) | Unlink social account |
+| POST | `/api/auth/delete-user` | 401 | Delete account |
+| POST | `/api/auth/revoke-session` | 400 (no token) | Revoke single session |
+| POST | `/api/auth/revoke-sessions` | 401 | Revoke all |
+| POST | `/api/auth/update-user` | 401 | Update profile |
+| POST | `/api/auth/change-password` | 400 (no body) | Email/password disabled |
+| GET | `/api/auth/verify-email` | 400 (no token) | Email verification |
+| POST | `/api/auth/send-verification-email` | 400 (no email) | Trigger verification email |
+| POST | `/api/auth/reset-password` | 400 (no email) | Reset password |
+
+---
+
+## 3. OAuth Client Configuration (Recon)
+
+`POST /api/auth/sign-in/social` return OAuth init URL dengan `client_id` (public half). 4 provider aktif:
+
+| Provider | `client_id` | `scope` | Callback path |
+| --- | --- | --- | --- |
+| Google | `365166915661-imf3vlkl3creps2lo3tmc9ri48regmmi.apps.googleusercontent.com` | `email profile openid` + `include_granted_scopes=true` | `/api/auth/callback/google` |
+| Discord | `1339189112724394037` | `identify email role_connections.write` (duplicated `identify+email` di scope) | `/api/auth/callback/discord` |
+| Patreon | `[REDACTED]-LkzIdFeVDtWgrTlWv` | `identity identity[email] campaigns campaigns.members` | `/api/auth/oauth2/callback/patreon` (beda!) |
+| GitHub | `Ov23lirdlCRfNlu76zzU` | `read:user user:email` | `/api/auth/callback/github` |
+
+Provider NOT aktif (return `Provider not found`): `twitter`, `facebook`, `linkedin`, `apple`, `microsoft`, `twitch`.
+
+**Auth flow detail:**
+- **State**: random 32-char string, signed & encrypted, disimpan di cookie `__Secure-better-auth.state`
+  - `Max-Age=300` (5 min)
+  - `HttpOnly; Secure; SameSite=Lax`
+  - Format: `EoGiK_3EAtzkidTyFx0QjmFh53mqXGJQ.Q9ebuweSDwkezz%2FG0PkOg2v3eEAgiptl0ph9ieTC4jk%3D` (state.signature)
+- **PKCE**: aktif untuk Google + GitHub (`code_challenge_method=S256`)
+- **CSRF**: state validation enforced (tested: invalid state → `state_mismatch`)
+- **HTTP 302** ke `/api/auth/error?error=<code>` saat state invalid
+
+### 3.1 Cookie Attributes (from social init)
+
+```
+__Secure-better-auth.state=<state>.<sig>; 
+  Max-Age=300; 
+  Path=/; 
+  HttpOnly; 
+  Secure; 
+  SameSite=Lax
+```
+
+---
+
+## 4. Test Results
+
+### 4.1 Magic Link — BROKEN
+
+```bash
+$ for i in {1..5}; do
+    curl -s -X POST "https://wtr-lab.com/api/auth/sign-in/magic-link" \
+      -H "Content-Type: application/json" \
+      -d '{"email":"test@example.com","callbackURL":"/en/profile"}' \
+      -o /dev/null -w "%{http_code} time:%{time_total}\n"
+  done
+500 time:0.531848
+500 time:0.483797
+500 time:0.558151
+500 time:0.595559
+500 time:0.501269
+```
+
+Email valid → HTTP 500 konsisten. **Tidak bisa daftar via magic link.**
+
+### 4.2 Email/Password — DISABLED
+
+```bash
+$ curl -s -X POST "https://wtr-lab.com/api/auth/sign-in/email" \
+    -H "Content-Type: application/json" \
+    -d '{"email":"test@test.com","password":"password123"}'
+{"message":"Email and password is not enabled","code":"EMAIL_PASSWORD_DISABLED"}
+
+$ curl -s -X POST "https://wtr-lab.com/api/auth/sign-up/email" \
+    -H "Content-Type: application/json" \
+    -d '{"email":"test@test.com","password":"password123","name":"test"}'
+{"message":"Email and password sign up is not enabled","code":"[REDACTED]"}
+```
+
+### 4.3 Social Login — Init OK
+
+```bash
+$ curl -s -X POST "https://wtr-lab.com/api/auth/sign-in/social" \
+    -H "Content-Type: application/json" \
+    -d '{"provider":"google","callbackURL":"/en"}' | python3 -c "
+import json, sys, urllib.parse
+d = json.load(sys.stdin)
+print('URL:', d['url'][:100])
+print('Redirect:', d['redirect'])"
+URL: https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=365166915661-imf3
+Redirect: True
+```
+
+### 4.4 Callback — CSRF protected
+
+```bash
+$ curl -sI "https://wtr-lab.com/api/auth/callback/google?code=fake&state=fake" | head -5
+HTTP/2 302
+location: https://wtr-lab.com/api/auth/error?error=state_mismatch
+```
+
+### 4.5 Error Page
+
+```bash
+$ curl -sI "https://wtr-lab.com/api/auth/error?error=state_mismatch"
+HTTP/2 200
+content-type: text/html; charset=utf-8
+```
+
+XSS test:
+```bash
+$ curl -s "https://wtr-lab.com/api/auth/error?error=<script>alert(1)</script>" | grep -c "<script>alert"
+0  # ← tidak reflected, escaped
+```
+
+### 4.6 Rate Limit — OK
+
+```bash
+# 20x rapid request ke /api/auth/sign-in/social
+  17: 200
+  18: 429  ← rate limit aktif
+  19: 200 (next minute)
+```
+
+---
+
+## 5. Findings (Auth-specific)
+
+### F-AUTH-01 [High] — Magic link broken (SMTP misconfigured)
+
+**Deskripsi:** Magic link return HTTP 500 setiap saat. SMTP provider (likely ProtonMail atau service lain) tidak ter-configure dengan benar di Better Auth.
+
+**Dampak:**
+- **Lockout potential** — jika OAuth providers down, users tidak bisa login
+- **DoS surface** — attacker bisa spam endpoint → server log 500 terus (Sentry noise)
+- **Information disclosure** — error 500 di-log ke Sentry → mungkin bocor stack trace / env var
+
+**Reproduksi:**
+```bash
+curl -X POST "https://wtr-lab.com/api/auth/sign-in/magic-link" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"any@email.com","callbackURL":"/en"}'
+# Response: HTTP 500, no body
+```
+
+**Rekomendasi:**
+- Perbaiki SMTP config (likely Better Auth `emailAndPassword.sendMagicLink` callback broken)
+- Tambah fallback: jika SMTP down, return 503 + generic message
+- Set response message generic untuk semua error auth (jangan 500 dengan stack trace bocor)
+
+---
+
+### F-AUTH-02 [Medium] — OAuth scope over-request (Patreon, Discord)
+
+**Confidence:** Confirmed
+
+**Deskripsi:**
+- **Patreon scope** minta `identity identity[email] campaigns campaigns.members` — `campaigns.members` allow baca list patron dan tier mereka. Untuk sign-in saja, cukup `identity identity.memberships` (atau `identity.members` saja).
+- **Discord scope** minta `role_connections.write` — ini allow write role user di server Discord. Untuk sign-in saja, cukup `identify email`.
+- Discord scope punya duplikat: `identify email identify email role_connections.write` (ada pengulangan)
+
+**Bukti:** See Section 3.
+
+**Dampak:**
+- Jika user link akun via Patreon, attacker (jika ada token leak) bisa baca semua patron + tier
+- Jika user link akun via Discord, attacker bisa write role tanpa consent eksplisit
+
+**Rekomendasi:**
+- Patreon: ganti scope jadi `identity identity[email].memberships` (atau `identity.memberships`)
+- Discord: hapus `role_connections.write` (atau pisah jadi "Link Discord" button terpisah dengan scope berbeda)
+- Fix duplikat `identify email` di Discord scope
+
+---
+
+### F-AUTH-03 [Medium] — Two callback URL patterns (Patreon vs others)
+
+**Confidence:** Confirmed
+
+**Deskripsi:**
+- Google/Discord/GitHub callback: `/api/auth/callback/[provider]`
+- Patreon callback: `/api/auth/oauth2/callback/patreon` (path beda!)
+
+OAuth redirect_uri di-init:
+- Google: `redirect_uri=https%3A%2F%2Fwtr-lab.com%2Fapi%2Fauth%2Fcallback%2Fgoogle`
+- Patreon: `redirect_uri=https%3A%2F%2Fwtr-lab.com%2Fapi%2Fauth%2Foauth2%2Fcallback%2Fpatreon`
+
+**Dampak:**
+- Confusing / tidak konsisten (security anti-pattern)
+- Attack surface extra: ada 2 endpoint yang handle OAuth callback
+
+**Rekomendasi:**
+- Samakan semua callback ke `/api/auth/callback/[provider]`
+- Test ulang OAuth flow setelah perubahan
+
+---
+
+### F-AUTH-04 [Low] — Better Auth verbose Zod error messages
+
+**Deskripsi:** Better Auth return Zod error bocor schema:
+
+```json
+{"message":"[body.email] Invalid input: expected string, received undefined; [body.password] Invalid input: expected string, received undefined","code":"VALIDATION_ERROR"}
+```
+
+**Dampak:** Information disclosure (internal field naming, Zod paths).
+
+**Rekomendasi:** Override Better Auth error handler untuk return generic `400 Invalid request` di production.
+
+---
+
+### F-AUTH-05 [Info] — State CSRF + PKCE active (positive)
+
+**Confidence:** Confirmed
+
+**Deskripsi:** OAuth flow pakai:
+- State token (random 32-char, signed) — CSRF protected
+- PKCE (S256) untuk Google + GitHub — code interception protected
+- Cookie: `HttpOnly; Secure; SameSite=Lax; Max-Age=300`
+
+**Bukti:** State validation test pass (`state_mismatch` returned for fake state).
+
+**Rekomendasi:**
+- Pertimbangkan `SameSite=Strict` untuk cookie state (saat ini `Lax`)
+- Tambah `__Host-` prefix untuk cookie (saat ini `__Secure-`)
+
+---
+
+### F-AUTH-06 [Info] — Error page XSS-safe
+
+**Confidence:** Confirmed
+
+**Deskripsi:** `/api/auth/error?error=<script>alert(1)</script>` return HTML yang escape XSS payload. Test:
+```bash
+$ curl -s "https://wtr-lab.com/api/auth/error?error=<script>alert(1)</script>" | grep "<script>alert"
+0  # escaped/sanitized
+```
+
+**Rekomendasi:** Keep as-is.
+
+---
+
+## 6. Session/Cookie Detail
+
+- **Session cookie name:** `__Secure-better-auth.session_token` (inferred dari state cookie pattern)
+- **State cookie:** `__Secure-better-auth.state` (HttpOnly, Secure, SameSite=Lax, Max-Age=300)
+- **CSRF:** State-based, validated per callback
+- **Token storage:** Cookie-based (not localStorage — good)
+
+---
+
+## 7. Coverage Gaps
+
+- **Tidak test sign-out flow** (butuh session valid)
+- **Tidak test session expiration** (butuh session valid + tunggu expiry)
+- **Tidak test social linking** (link Patreon ke existing account, etc.)
+- **Tidak test account deletion** (butuh auth)
+- **Tidak test email verification** (SMTP broken)
+
+---
+
+## 8. Conclusion
+
+Auth surface WTR-LAB relatif aman (CSRF + PKCE aktif, error page escaped, rate limit aktif), tapi ada 2 masalah utama:
+
+1. **Magic link broken (F-AUTH-01)** — High severity, harus di-fix segera
+2. **OAuth scope over-request (F-AUTH-02)** — Medium, perlu review
+
+OAuth config overall sudah cukup baik, dengan pattern Better Auth standard. Yang perlu di-improve adalah consistency (callback URL pattern) dan principle of least privilege (scope).
+
+---
+*BLACK-STAMPED BY CT-002*

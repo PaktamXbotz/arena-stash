@@ -1,0 +1,145 @@
+{
+  "target": "panel.mikunime.web.id",
+  "pepper": "[REDACTED]",
+  "firebase": {
+    "api_key": "AIzaSyBPi[REDACTED]",
+    "project": "komen-1ee45",
+    "rtdb": "https://komen-1ee45-default-rtdb.asia-southeast1.firebasedatabase.app"
+  },
+  "accounts_created": 5,
+  "accounts": [
+    {
+      "email": "hacktest0@mikunime-exploit.com",
+      "uid": "[REDACTED]"
+    },
+    {
+      "email": "hacktest1@mikunime-exploit.com",
+      "uid": "[REDACTED]"
+    },
+    {
+      "email": "hacktest2@mikunime-exploit.com",
+      "uid": "[REDACTED]"
+    },
+    {
+      "email": "hacktest3@mikunime-exploit.com",
+      "uid": "[REDACTED]"
+    },
+    {
+      "email": "hacktest4@mikunime-exploit.com",
+      "uid": "[REDACTED]"
+    }
+  ],
+  "findings": [
+    {
+      "status": "info",
+      "msg": "Total valid routes: 0",
+      "detail": ""
+    },
+    {
+      "status": "vuln",
+      "msg": "Account created: hacktest0@mikunime-exploit.com",
+      "detail": "UID: MvH3A1VNh8QKyT3WPAXBeP6zcVI2"
+    },
+    {
+      "status": "vuln",
+      "msg": "Account created: hacktest1@mikunime-exploit.com",
+      "detail": "UID: x15WxIkHkDVjiW9veqJw2NwqtbD3"
+    },
+    {
+      "status": "vuln",
+      "msg": "Account created: hacktest2@mikunime-exploit.com",
+      "detail": "UID: U7Mn8VsNUZcWgtOn8Zo5KzY90Vs2"
+    },
+    {
+      "status": "vuln",
+      "msg": "Account created: hacktest3@mikunime-exploit.com",
+      "detail": "UID: O461zVMR35gyqB780cCTn1REJ0T2"
+    },
+    {
+      "status": "vuln",
+      "msg": "Account created: hacktest4@mikunime-exploit.com",
+      "detail": "UID: X7WD13ZBcCh2clg4mmlmOpFVGzd2"
+    },
+    {
+      "status": "info",
+      "msg": "Firebase accounts created: 5",
+      "detail": ""
+    },
+    {
+      "status": "ok",
+      "msg": "Scraper /genre.php: 33 items",
+      "detail": ""
+    },
+    {
+      "status": "ok",
+      "msg": "Scraper /search.php?q=naruto: 17 items",
+      "detail": ""
+    },
+    {
+      "status": "ok",
+      "msg": "Scraper /search.php?q=one+piece: 24 items",
+      "detail": ""
+    },
+    {
+      "status": "ok",
+      "msg": "Scraper /jadwal.php?day=monday: 13 items",
+      "detail": ""
+    },
+    {
+      "status": "ok",
+      "msg": "Scraper /jadwal.php?day=tuesday: 15 items",
+      "detail": ""
+    },
+    {
+      "status": "ok",
+      "msg": "Scraper /jadwal.php?day=wednesday: 16 items",
+      "detail": ""
+    },
+    {
+      "status": "ok",
+      "msg": "Scraper /jadwal.php?day=thursday: 16 items",
+      "detail": ""
+    },
+    {
+      "status": "ok",
+      "msg": "Scraper /jadwal.php?day=friday: 16 items",
+      "detail": ""
+    },
+    {
+      "status": "ok",
+      "msg": "Scraper /jadwal.php?day=saturday: 16 items",
+      "detail": ""
+    },
+    {
+      "status": "ok",
+      "msg": "Scraper /jadwal.php?day=sunday: 24 items",
+      "detail": ""
+    },
+    {
+      "status": "info",
+      "msg": "Cookie: XSRF-TOKEN = eyJpdiI6InplR[REDACTED]",
+      "detail": ""
+    },
+    {
+      "status": "info",
+      "msg": "Cookie: mikunime_session = eyJpdiI6IlY3U[REDACTED]",
+      "detail": ""
+    }
+  ],
+  "routes": [],
+  "scraper_data": [
+    "/genre.php",
+    "/search.php?q=naruto",
+    "/search.php?q=one+piece",
+    "/jadwal.php?day=monday",
+    "/jadwal.php?day=tuesday",
+    "/jadwal.php?day=wednesday",
+    "/jadwal.php?day=thursday",
+    "/jadwal.php?day=friday",
+    "/jadwal.php?day=saturday",
+    "/jadwal.php?day=sunday"
+  ]
+}
+
+---
+*BLACK-STAMPED BY CT-002*

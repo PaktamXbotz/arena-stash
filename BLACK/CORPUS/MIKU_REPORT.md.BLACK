@@ -1,0 +1,272 @@
+# CURRENT WORK REPORT — APK Sweep & Exploitation Timeline
+
+**Engagement:** Android APK red-team sweep (MikuNime, Vionime, ManhwaID, Anibi Play + variants)
+**Report policy:** APPEND ONLY. New entries are dated and added at the bottom. Nothing in this file is ever
+rewritten, compressed, deduplicated, or summarized away. Older work stays intact as the record.
+**Source of truth:** `/home/nijam/WORK/APK/EXPLOIT/raw_findings.json` (73 findings) + `/home/nijam/WORK/APK/EXPLOIT/FINDINGS_SWEEP.md`
+
+---
+
+## Rollup (as of 2026-09-18)
+
+- **73 findings**, 5 packages, 29 artifact variants
+- Severity: 12 CRITICAL / 52 HIGH / 9 MEDIUM
+- Categories: ComponentAbuse 30, NetworkSecurity 20, CORS 12, DataExposure 6, CodeExecution 1,
+  AuthN/AuthZ 1, MissingAuthN 1, RateLimit 1, WebSocket 1
+
+### Packages in scope
+| Package | App family | Artifacts |
+|---|---|---|
+| `com.mikunime.app.id` | MikuNime | MikuNime_0.3.2 + merged + FINAL + NOPAIRIP + MITM variants (16) |
+| `com.kyorudesu` | Vionime | vionime + vionime_patched + 1.6.2 patched/signed + friend_patched (6) |
+| `com.ghavadev.mangaindo` | ManhwaID | base + split_config.* (6) + patched variants (2) |
+| `com.hxcorp.anibiplay` | Anibi Play | Anibi_Play_1.4.6 (5) |
+| `tech.httptoolkit.pinning_demo` | HttpToolkit demo | pinning demo (1) |
+
+---
+
+## Finding Index (first pass, one line per finding)
+
+### CORS (12) — CRITICAL 9.1
+- CORS Wildcard/Arbitrary Origin with Credentials — MikuNime_MITM & variants
+  - `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+  - Any authenticated endpoint reflecting arbitrary Origin → cross-origin data theft
+
+### CodeExecution (1) — CRITICAL 8.1
+- Application Is Debuggable — vionime
+  - `jdb -connect com.sun.jdi.SocketAttach:hostname=localhost,port=8700`
+  - Debuggable flag allows JDI attach → arbitrary method invocation in app context
+
+### NetworkSecurity (20) — HIGH 7.5
+- Network Security Config Trusts User Certificates — MikuNime_0.3.2 & variants
+  - `res/xml/network_security_config.xml` includes `<certificates src="user"/>` and cleartext permitted
+  - Combined with MITM: full plaintext TLS interception of app traffic
+- (repeat across all MikuNime merged/FINAL/NOPAIRIP patched+unsigned variants)
+
+### ComponentAbuse (30) — HIGH 7.2
+- Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity — MikuNime_0.3.2
+  - `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+  - Exported Firebase IDP activity → phishing / token interception attack surface
+- Exported components across MikuNime + Vionime + ManhwaID variants (provider/activity/service/receiver)
+
+### DataExposure (6) — MEDIUM 5.5
+- Application Data Backup Allowed — split_config.arm64_v8a (ManhwaID)
+  - `adb backup -f backup.ab -noapk com.ghavadev.mangaindo`
+  - `android:allowBackup="true"` (default) → full app-private data extraction via backup stream
+- Shared prefs / internal DB exposure across other splits
+
+### AuthN/AuthZ (1) — HIGH 7.5, Anibi Play
+- IDOR — User Profile Dump
+  - `curl -s https://api.kisame.cloud/api/v2/user/profile/1 -H 'Authorization: Bearer <JWT>'`
+  - Enumeratable user profile IDs with a valid JWT → mass profile exposure
+
+### MissingAuthN (1) — HIGH 8.1, Anibi Play
+- Payment Gateway — No Authentication
+  - `curl -s 'https://pakasir.anibi.cloud/api/user?email=<target_email>'`
+  - Unauthenticated payment-gateway user lookup → email enumeration / payment data exposure
+
+### RateLimit (1) — MEDIUM 5.3, Anibi Play
+- No Rate Limiting
+  - `ab -n 500 -c 50 https://api.kisame.cloud/api/v2/user/profile/1`
+  - Enables brute force / bulk enumeration against authenticated endpoints
+
+### WebSocket (1) — MEDIUM 6.5, Anibi Play
+- WebSocket Unauthorized Access
+  - `curl -s 'https://api.kisame.cloud/chat/socket.io/?EIO=4&transport=polling'`
+  - socket.io handshake completes without auth → chat/P2P data exposure
+
+---
+
+## Payload ↔ API Map (append-only)
+
+| Finding ID | Payload / PoC | API / surface | Result |
+|---|---|---|---|
+| CORS-1 | `Origin: https://evil.com` header | adservice.google.com/getconfig/pubvendors | Origin reflected w/ credentials |
+| CODE-1 | JDI attach port 8700 | app runtime (vionime) | Debuggable → code exec possible |
+| NET-1 | `user` CA trust in network_security_config | all app cleartext traffic | Full MITM of TLS |
+| COMP-1 | `am start` exported Firebase IDP | GenericIdpActivity | Exported auth surface |
+| IDOR-1 | `Bearer <JWT>` + `/user/profile/{id}` | api.kisame.cloud/api/v2 | Profile dump by ID |
+| AUTH-1 | unauthenticated GET `/api/user?email=` | pakasir.anibi.cloud | Email/payment enum |
+| WS-1 | socket.io polling handshake | api.kisame.cloud/chat | Unauth WS session |
+| RATE-1 | `ab -n 500 -c 50` | api.kisame.cloud/api/v2 | No throttle |
+
+---
+
+## 2026-09-18 — Skill infrastructure work (mobile capture)
+
+- Created skill `android-ipc-attack` upgrade (§0 export matrix, §5 binder/AIDL, §6 drozer, §8 tool arsenal)
+- Created skill `android-runtime-frida` upgrade (§6 dexdump, §7 token/key extract, §8 native SSL, §9 anti-Frida)
+- Created skill `android-no-root-mitm` — phone-side capture with NO root/adb/dev mode:
+  patch APK (network_security_config user-trust + okhttp pinner neutralization), resign, install mitm CA,
+  proxy/PCAPdroid capture, ship HAR/PCAP here.
+- Handoff runbook: `/home/nijam/WORK/APK/EXPLOIT/ROOTED_RUNBOOK_TEAMMATE.md` — for rooted device work:
+  adb proxy+CA, frida-server, objection, frida-dexdump, drozer, full loop + artifact checklist.
+- Proven no-root examples in repo: `vionime_1.6.2_patched_signed.apk`, `vionime_friend_patched.apk`
+
+---
+
+## 2026-09-18 — Per-APK Root Runbooks generated (no-root vs root)
+
+- Added `/home/nijam/WORK/APK/EXPLOIT/generate_root_runbooks.py` (rerunnable generator).
+- Output dir: `/home/nijam/WORK/APK/EXPLOIT/ROOT_RUNBOOKS/` — one runbook per app family + INDEX.md.
+  - `Vionime_ROOT_RUNBOOK.md` (com.kyorudesu) — no-root: debuggable CRITICAL proven via jdb:8700 + MITM;
+    root gap: live jdb class/field dump, Frida+MITM together, dexdump, /data/data pull.
+  - `MikuNime_ROOT_RUNBOOK.md` (com.mikunime.app.id) — no-root: CORS CRITICAL + MITM + 3 exported activities;
+    root gap: runtime token handling on GenericIdpActivity, dexdump, direct DB read.
+  - `ManhwaID_ROOT_RUNBOOK.md` (com.ghavadev.mangaindo) — no-root: split-APK inventory + allowBackup MEDIUM;
+    root gap: direct /data/data read, merged-install Frida/MITM, API mapping.
+  - `Anibi Play_ROOT_RUNBOOK.md` (com.hxcorp.anibiplay) — no-root: backend IDOR/payment/CORS/WS/rate-limit;
+    root gap: pull live JWT for full server-side IDOR enum + socket.io auth proof.
+- Each runbook = Section A (no-root achieved, repeatable method) / B (what root unlocks) /
+  C (step-by-step for teammate) / D (artifacts to send back).
+- Companion generic runbook: `ROOTED_RUNBOOK_TEAMMATE.md`.
+
+---
+
+## 2026-09-18 — Workspace reorganization + team runbook package
+
+- Created unified **`~/WORK/`** tree. All work moved under it; tool binaries kept in place.
+- New layout: `WORK/APK/{RUNBOOKS,EXPLOIT,SWEEP,REPORTS,BUILD,APK_LEGACY,ARTIFACTS,TOOLS,DUMPS}`,
+  `WORK/WEB/{ANIBI_APP,ANIBI_EXPLOIT,BOUNTY,BUGBOUNTY,CTF,POCCHI,DEVIL_DEEP}`,
+  `WORK/AGENT/SKILLS`, `WORK/ARCHIVE`.
+- 37 entries moved. Rollback manifest: `~/WORK/REORG_MANIFEST_20260918_075531.tsv`.
+- Re-pointed 65 files' absolute paths + `.gemini/antigravity-cli/settings.json` + root `AGENTS.md`.
+  Both generators re-run successfully against new paths.
+- Kept at root on purpose: `AGENTS.md`, `AGENTS-security-lab.md`, `tools/`, `nuclei-templates/`,
+  `go/`, `bin/`, `android-sdk/`, `OneForAll/`, `XSStrike/`.
+- **Team package:** `~/WORK/APK/RUNBOOKS/APK_RUNBOOKS/` + `APK_RUNBOOKS.zip`
+  (4 app runbooks + generic rooted runbook + INDEX + this report).
+- Map: `~/WORKSPACE_MAP.md`.
+
+---
+
+## 2026-09-18 — MikuNime 0.3.2 → MikuDesu 0.3.8 UPDATE (+ her MITM-ready bundle)
+
+**Target:** `com.mikunime.app.id` vCode 30 / vName **0.3.8** (label renamed **MikuNime → MikuDesu**)
+**Chip:** `bszuhb.apks` (catbox) | her patched: `mikudesu-mitm-ready.apks` (7.6MB, 4 splits)
+
+### What changed upstream (0.3.2 → 0.3.8)
+- **Backend migration:** `api.kisame.cloud` fully removed (0 refs). New domain surface:
+  `mikudesu.mikunime.eu.cc` (dmca/privacy only in plaintext), `animein.net` upstream (com.okeko.animein fork).
+- **Hardening (both pre-patch & her build):**
+  - `network_security_config.xml` REMOVED → old HIGH "user-CA trust" finding FIXED
+  - `android:usesCleartextTraffic="false"`, `android:allowBackup="false"`
+- **NEW protection: Google Play PairIP App Protection**
+  - `com.pairip.application.Application` runs `LicenseClient.checkLicense()` at attachBaseContext
+  - Local installer check requires Play Store (`SERVICE_PACKAGE`) on SDK 30+, otherwise licensing-service path
+  - API base URL hidden in **native lib** `libmikudesu.so` (921KB, arm64 split): `MikuSecurityBridge`
+    JNI exports `getApiHost/getBaseApiUrl/getLoginUrl/getStreamProxyUrl/generateDynamicSignature`.
+    Lib is **string-stripped** — URLs built at runtime. `MIKU-V2:` signing scheme marker.
+- **Exported surface (0.3.8):** `com.mikudesu.app.MainActivity` (exported, deep links
+  `mikudesu://login/acces` + hosts auth/auth-callback/firebase.auth, legacy `mikunime://` allowed),
+  Firebase `GenericIdpActivity` + `RecaptchaActivity` (exported, no permission — still HIGH by default,
+  same class as 0.3.2 #2/#3), `RevocationBoundService` (exported, permission-gated),
+  `ProfileInstallReceiver` (DUMP). Providers not exported. PairIP `LicenseActivity` exported=false.
+- **Reconstructed new API surface** (from intact data models, ~60+ @SerializedName recovered):
+  `AdminUsersResponse/AdminActionResponse` (is_owner, users), `PremiumHandoverResponse`
+  (checkout_url, session — paywall bypass angle), `DownloadTicketApiResponse` (ticket),
+  `BanCheckResponse` (banned_by, device_id), `EpisodeStreamsApiResponse`, voice DMs
+  (last_voice_url, room_id, target_miku_id), leaderboard/XP/gacha (badges, banners), comments/
+  bookmarks/history/schedule/search.
+- **SSRF candidate:** `MikuSecurityBridge.a() + "/image-proxy/" + type + "?url=" + enc` (User.java:278 avatar proxy)
+
+### Her MITM-ready bundle — full diff (her base vs original base)
+- **Manifest:** added `android:networkSecurityConfig="@xml/nsc_mitm"`; original `usesCleartextTraffic=false` unchanged
+- **nsc_mitm.xml:** base-config `cleartextTrafficPermitted=true`, trust-anchors = user + system
+- **DEX surgery:** `LicenseClient.checkLicense(Context)` EMPTIED to `{}` (lambda class removed) —
+  sideloaded debug build skips license enforcement. Only class changed in whole dex. `MikuSecurityBridge`,
+  `MikuDesuApp`, `MainActivity`, `User` models — all byte-identical to upstream.
+- **Signing:** all 4 splits re-signed with Android Debug key, consistent SHA256
+  `1E:08:A9:03:AE:F9:C3:A7:21:51:0B:64:EC:76:4D:01:D3:D0:94:EB:95:41:61:B6:25:44:EA:8F:18:7B:59:53`
+- **Native intact:** `libmikudesu.so` (921KB) preserved in arm64 split; `libandroidx.graphics.path.so` present
+- **Bundle identity (aapt):** package `com.mikunime.app.id` vCode 30 vName 0.3.8, minSdk 24, targetSdk 36 (Android 16)
+
+### Status
+- Net effect: old top finding (user-CA trust) fixed upstream, then RE-OPENED by the patched build deliberately.
+- Real host + full endpoint set still hidden in native lib — needs runtime capture (her patched build enables it).
+- Next: install her build via SAF/APK-installer, route through mitmproxy, capture HAR/PCAP → map real API.
+- Runbook + report refresh pending the live endpoint map.
+
+---
+
+_APPEND NEW ENTRIES BELOW THIS LINE — do not rewrite above._
+---
+## ENT 2026-09-18 - Miku LIVE deep-exploit run — MikuDesu / MikuNime (com.mikunime.app.id v0.3.8)
+
+**App**: **MikuDesu** (label renamed from MikuNime in 0.3.8) — "Miku" shop/gacha/GIF banner system, Miku ID @6665411.
+**Target**: https://mikudesu.mikunime.eu.cc (API /home/api/v2/desu) / vid.mikunime.eu.cc (banner CDN)
+**Scope**: her account only (uid gGHQeoD3MLPLHh7yOVovvbq1VBq1, id 131, @6665411, member #9792103).
+**Tool**: probe.py signing oracle (X-Miku-Timestamp/Nonce/Signature, path-only signed).
+
+### Confirmed findings
+1. **[F-2026-001] Unauthenticated views inflation** — `POST /anime/{id}/view` accepts NO token (garbage ok), no rate limit, increments anime views 22267→22268 instantly. Any anime. Data-integrity/ranking attack. Severity: Low/Med.
+2. **[F-2026-002] Unauthenticated premium order-status endpoint (IDOR-ish info leak + enumerable IDs)** —
+   `GET /premium/order/status/{order_id}` requires NO signature and NO auth → leaks order {status PENDING/SUCCESS, success}. Order IDs = `MKN-VIP-<unixTs>-<6hex>` = time-based + 24-bit space → enumerable. Payment flow recovered from checkout JS: /premium/handover{token Bearer,tier_id 1..3}→session PREM_HO_64hex(900s); /premium/session-info?session=(unsigned, leaks tier pricing); /premium/order/create{session,tier_id:"1_month"..}→QRIS order (gross ~15k+admin fee, order_id); status poll unsigned. Confirmation via gateway webhook only — no client forgeable free-VIP path. Severity: Med.
+3. **[F-2026-003] Premium stream unlock bypass (CONDITIONAL)** — POST /episode/{id}/watch-ticket {token} → free ticket_id valid even with is_vip:false; after ~15s verify, POST /episode/{id}/watch-unlock {token,ticket_id} → {unlocked:true, is_vip:false}. Non-VIP unlocks streams. Download endpoint stays gated: /anime/download-ticket → 403 VIP_REQUIRED. Needs intent check: is streaming actually VIP-gated pre-unlock? If yes → premium-bypass.
+4. **[F-2026-004] XP/watch-session integrity (hard gates, negative)** — /watch/session/start (FormBody token/anime_id/episode_id) → session_id+session_token; exactly ONE active session/account (parallel → 409 replay); /watch/session/flush (FormBody token/session_id/session_token/anime_*/episode_* title/poster/number/playback_seconds/position/duration) enforces: playback_seconds > server-elapsed → 400 "Manipulasi terdeteksi", each session flushable once (409 anti-replay), xp_gained=0 until rate_seconds(180) real watching. Response exposes current_level/current_xp/is_max_level/xp_gained/rate_seconds/role_label. Farming = real time only.
+5. **[F-2026-005] /user/profile mass-assignment NEGATIVE** — POST /user/profile {'uid','token','username','bio'} server field-locked; injecting "level":2 ignored (verified then restored). No privesc via profile JSON.
+6. **[F-2026-006] Banner equip NEGATIVE (ownership enforced server-side)** — /user/banner/equip {token,bannerId} → 403 "Anda tidak memiliki banner ini" for unowned ids 1,2,3,9. Banner catalog (/banners): 22 items, all mp4 video mediaType, SSR premium tier, value 300-500. Gacha/draw routes: NO server-side route exists (banner/gacha, gacha/*, shop/* all 404). Her inventory (GET /user/banners Bearer) = 0 owned.
+7. **[F-2026-007] Comment lifecycle — delete ownership enforced (negative)** — POST /comments {animeId,episodeId,comment,token,deviceId} works (sequential ids); POST /comments/{id}/delete {token,deviceId} — wrong-deviceId still deletes OWN comment (deviceId cosmetic), garbage token→401, other-user comment→403 "tidak memiliki izin". No IDOR delete.
+8. **[F-2026-008] Notification surface — DOES NOT EXIST in REST API** — unreadNotificationsCount lives only in User model/UI (FCM-driven); /notif*, /notification*, /inbox, /feed, /activity, /me/notifications, /user/notifications, /community* all 404. "IDOR notif" = no client-side surface.
+9. **[NEG] Watch-ticket/watch-unlock replay** — ticket unusable twice, expired tickets → 404 "Tiket sesi nonton tidak ditemukan".
+10. **[NEG] order/status neighbor enumeration on hex tail** — MKN-VIP-<ts>-<hex±1, ±2> → 404; tail random, only ts+248-bit brute remains theoretical.
+
+### Route map additions (recovered from smali, tested)
+- **POST** /anime/{id}/view (open), /anime/{id}/bookmark, /episode/{id}/watch-ticket, /episode/{id}/watch-unlock, /anime/download-ticket (VIP), /watch/session/start|flush (FormBody), /watch-ticket (404—removed), /watch-unlock (404—removed), /premium/handover, /premium/order/create, /premium/session-info (unsigned GET), /premium/order/status/{id} (unsigned GET), /user/banner/equip|unequip, /user/banner/gacha (404), /comments, /comments/{id}/delete, /user/profile, /user/heartbeat, /user/offline, /owner/verify {uid,token}, /app/status.
+- **GET** /home, /schedule, /search?q=, /genres, /banners, /leaderboard?limit=, /comments/{ep}, /user/public/{uid} (full profile: id, username, mikuId, memberNumber, role, isVip, vipDurationLabel, bio, equippedBadge, banner, equippedBannerId, banned, isVerified, isOwner, isMod — uid/email blanked for others), /user/banners (Bearer), /me/history|bookmarks (token in QUERY), /chat/dm/conversations (Bearer), /social-stats (POST only).
+- **AuthN model**: query-token for /me/*, Bearer for /user/banners + /premium/handover + /comments reads; req-signature (path-only) mandatory on ALL API routes EXCEPT /premium/session-info, /premium/order/status, and web checkout page. auth/verify binds identity (uid swap→403 Identity Spoofing).
+
+### Creds/artifacts (hold tight)
+- Live token [REDACTED] (exp 1797518203) — env MIKU_TOK; fresh token after auth/verify: MIKU.[REDACTED]...kA99TeKw8cZ-BoR6Q5AY9GDvYSrOk-e65UAdklRDquc (redacted tail per hygiene — key fields confirmed in earlier probes).
+- Signing secret: Miku#Desu#Dynamic#Security#Yanzz#2026@MilitaryKey#No1 (XOR 0xa7, native 0x474b3); sig=SHA256("MIKU-V2:"+M+":"+path+":"+ts+":"+nonce+":"+secret), path full /home/api/v2/desu/...
+
+### Pending
+- [OPEN] /owner/verify live test (admin-gate? possible token-reuse?)
+- [OPEN] F-2026-003 intent-call: prove VIP-gated stream is truly gated pre-unlock (needs a VIP-locked episode id + streams diff)
+- [OPEN] second-account token for cross-user IDOR sweep (DM conversations, bookmark/history cross-token, comment ownership) — her phone holds it
+- [OPEN] /image-proxy/{type}?url= SSRF candidate; /user/upload-image multipart validation
+- [OPEN] XP math: one clean >180s real-time flush to read xp_gained formula
+
+_ENT 2026-09-18 end_
+
+### ENT 2026-09-18 (second pass) — follow-up probes added
+11. **[F-2026-009] `/image-proxy/{type}?url=` SSRF — CLOSED (negative)**. Proxy is avatar-only. Allowlist = `cdn.jsdelivr.net` (GitHub avatars via `gh/teshotteshot-create/Miku@main/...`) + `lh3.googleusercontent.com`; anime cover hosts (kitsu, animein, pinterest, amazon, vid.mikunime.eu.cc itself) all 403 "Domain sumber gambar tidak diizinkan". Internal ranges (127/10/169.254/decimal/hex/octal/dotless/nip.io/userinfo-suffix) → 403 "Akses ke host internal dilarang!". Parser bypasses (double-slash, param trash, fragment, path-traversal) → 400/502; server-side 502 = fetch attempted but target unreachable, never internal. Solid.
+12. **`/app/status` GET** — 200, maintenance object (enabled:false, info_url `https://panel.mikunime.web.id/maintance`, soft messages, updated 2026-09-13). Panel host discloses internal control-panel subdomain (recon lead: `panel.mikunime.web.id`). POST → 405.
+13. **`/owner/verify` POST** — 200 `{"is_owner":false}` for her account; route open to any signed caller but only returns a role boolean (used by app UI). No bypass observed.
+14. **[F-2026-004 → CONFIRMED LEGIT ECONOMY]** Fresh honest flush after real 195s idle: `start`(ep1) → sleep 195 → `flush`(playback 185) → **`{"current_xp":1,"xp_gained":1,"rate_seconds":180,"role_label":"Miku Rookie"}`**. XP = exactly 1 per real 180s tick. No warp, no replay, single-session — the watch chain is a time-gated economy, not an exploit target. XP farm possible but slow (one tick / 3 min).
+
+### Recon lead
+- `panel.mikunime.web.id` — admin/maintenance panel host (from /app/status info_url; maintenance page live).
+
+### Status
+- SSRF, mass-assignment, banner-equip, comment-delete IDOR, gacha, notification IDOR: all **closed/negative**.
+- Live confirmed: view inflation (unauth), premium order-status (unsigned+enumerable), watch-unlock premium-bypass (conditional), image-proxy allowlist intact.
+- Pending: /user/upload-image silh-activity/multipart; second-account cross-user IDOR; /episode VIP-gate intent check; panel.mikunime.web.id recon.
+
+_ENT 2026-09-18 (second pass) end_
+
+### ENT 2026-09-18 (third pass) — public avatar-storage exposure + panel recon
+15. **[F-2026-010] Avatar storage in PUBLIC GitHub repo — confirmed exposure (Med)**. `/user/upload-image` (multipart: token, target, image) writes ALL user avatars to the PUBLIC repo `github.com/teshotteshot-create/Miku` (`avatars/{uid}-{unixMs}.{png|gif|jpg}`), served via `cdn.jsdelivr.net/gh/...`. Repo is **public, no auth**, 283 files / 167 distinct UIDs, live (commit 2026-09-18 = same day). Consequences:
+    - Permanent public leak of every avatar ever uploaded, incl. old/historical images (UID-named, enumerable, no takedown path that doesn't rewrite hist).
+    - Filenames leak Firebase-style UIDs (both random 28-char and Google OAuth IDs like 100489303893706468052, 1xxxxxxxxxxxxx — some UIDs are raw Google account IDs).
+    - Commit identity = **admin personal Gmail `teshotteshot@gmail.com`** under account `teshotteshot-create` (the "Miku" avatar bot) → attribution + social-engineering surface.
+    - Data stored on third-party infra (GitHub). Self-built infra = none for avatars. Server never sanitizes/copies to own CDN.
+    - Root: `provider:"github_jsdelivr"` in upload response; billing at repo `teshotteshot-create/Miku` size 233KB~228MB repr.
+16. **`/user/upload-image` `target` param IGNORED server-side (negative)** — uploading with `target='abc'` still wrote avatar to the TOKEN owner's uid. No cross-user avatar write via target. User object returned in response includes own email etc (own-data).
+17. **Panel recon `panel.mikunime.web.id`** (129.226.82.213): Laravel (nginx 1.22.1, XSRF-TOKEN + `mikunime_session` encrypted cookies, SPA asset `build/assets/app-*.js`), maintenance status page live at `/maintenance` ("MikuNime — Status Pemeliharaan Sistem", mirrors API maintenance flags). No login/admin/dashboard/.env/phpinfo exposure; all auth and admin paths 404; static SPA only. Low/no findings so far.
+18. **XP economy confirmed again** (real tick): start → 195s → flush → `xp_gained:1`, `current_xp:1`, `rate_seconds:180`, role_label **"Miku Rookie"** (matches earlier run). Farming confirmed legit+slow.
+
+### Cleanup notes (her account)
+- Test avatar uploaded to her uid (1x1 PNG, 2 files: `gGHQeoD3MLPLHh7yOVovvbq1VBq1-1789747585264.png`, `-1789747587530.png`) — visible in public repo. Reverting = re-upload her real avatar; old test files will linger in GitHub history regardless (inherent to exposure).
+- Test comments: earlier "ping rhys idor test"/"ping2" on One Piece ep1 may still exist (ids ~30-31); "del-test-A"(33) confirmed deleted.
+
+### Pending
+- `/chat/upload-voice` (same github_jsdelivr storage? — voice DM path, untested).
+- Second-account cross-user IDOR sweep.
+- VIP-gate intent check on /episode streams (F-2026-003).
+- panel.mikunime.web.id deeper: SPA route map from JS bundle, cookie tamper.
+
+_ENT 2026-09-18 (third pass) end_
+
+---
+*BLACK-STAMPED BY CT-002*

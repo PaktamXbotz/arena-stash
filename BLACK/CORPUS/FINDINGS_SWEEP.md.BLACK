@@ -1,0 +1,459 @@
+# CoderSteam-BugExpo APK RedTeam Sweep v3.0
+
+**Timestamp:** 2026-09-17 23:15:36 | **Apps Analyzed:** 28 | **Total Findings:** 68
+
+# GRAVITY Metrics
+| Severity | Count | Color |
+|:---|:---:|:---|
+|  **CRITICAL** | 12 | High-impact unauth takeover / RCE / data leak |
+|  **HIGH** | 50 | Significant auth bypass / MITM / credential leak |
+|  **MEDIUM** | 6 | Local data exposure / component abuse |
+|  **LOW** | 0 | Informational hygiene / hardening gaps |
+
+## Analyzed Applications
+| App Name | Package Name | Version | Exported | Findings |
+|:---|:---|:---:|:---:|:---:|
+| `MikuNime_0.3.2` | `com.mikunime.app.id` | `0.3.2` | 8 | 3 |
+| `MikuNime_MITM` | `com.mikunime.app.id` | `0.3.2` | 8 | 4 |
+| `ManhwaID_1.8.1_patched_single-aligned-debugSigned` | `com.ghavadev.mangaindo` | `1.8.1` | 16 | 4 |
+| `ManhwaID_1.8.1_patched_single` | `com.ghavadev.mangaindo` | `1.8.1` | 16 | 4 |
+| `base` | `com.ghavadev.mangaindo` | `1.8.1` | 16 | 3 |
+| `split_config.arm64_v8a` | `com.ghavadev.mangaindo` | `` | 0 | 1 |
+| `split_config.en` | `com.ghavadev.mangaindo` | `` | 0 | 1 |
+| `split_config.in` | `com.ghavadev.mangaindo` | `` | 0 | 1 |
+| `split_config.ms` | `com.ghavadev.mangaindo` | `` | 0 | 1 |
+| `split_config.xhdpi` | `com.ghavadev.mangaindo` | `` | 0 | 1 |
+| `MikuNime-FINAL-patched` | `com.mikunime.app.id` | `0.3.2` | 8 | 4 |
+| `MikuNime-FINAL-unsigned` | `com.mikunime.app.id` | `0.3.2` | 8 | 4 |
+| `MikuNime-FINAL` | `com.mikunime.app.id` | `0.3.2` | 8 | 4 |
+| `MikuNime-NOPAIRIP-patched` | `com.mikunime.app.id` | `0.3.2` | 8 | 4 |
+| `MikuNime-NOPAIRIP-unsigned` | `com.mikunime.app.id` | `0.3.2` | 8 | 4 |
+| `MikuNime-NOPAIRIP` | `com.mikunime.app.id` | `0.3.2` | 8 | 4 |
+| `MikuNime-merged-patched` | `com.mikunime.app.id` | `0.3.2` | 8 | 4 |
+| `MikuNime-merged` | `com.mikunime.app.id` | `0.3.2` | 8 | 3 |
+| `MikuNime` | `` | `` | 0 | 1 |
+| `MikuNime_0.3.2-merged-universal` | `com.mikunime.app.id` | `0.3.2` | 8 | 3 |
+| `MikuNime_0.3.2-patched-MITM` | `com.mikunime.app.id` | `0.3.2` | 8 | 4 |
+| `httptoolkit-pinning-demo` | `tech.httptoolkit.pinning_demo` | `1.2.1` | 0 | 0 |
+| `vionime` | `com.kyorudesu` | `1.6.7` | 6 | 2 |
+| `vionime_patched` | `com.kyorudesu` | `1.6.2` | 4 | 1 |
+| `vionime_1.6.2` | `com.kyorudesu` | `1.6.2` | 4 | 0 |
+| `vionime_1.6.2_patched` | `com.kyorudesu` | `1.6.2` | 4 | 1 |
+| `vionime_1.6.2_patched_signed` | `com.kyorudesu` | `1.6.2` | 4 | 1 |
+| `vionime_friend_patched` | `com.kyorudesu` | `1.6.2` | 4 | 1 |
+
+## Detailed Findings Log
+
+### 1.  [CRITICAL] CORS Wildcard/Arbitrary Origin with Credentials
+- **Target App:** `MikuNime_MITM` (`com.mikunime.app.id`)
+- **Category:** CORS | **CVSS:** 9.1 | **CWE:** CWE-942
+- **Description:** Endpoint https://adservice.google.com/getconfig/pubvendors reflects arbitrary attacker Origin with credentials enabled, allowing authenticated cross-origin data theft.
+- **PoC / Vector:** `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+
+### 2.  [CRITICAL] CORS Wildcard/Arbitrary Origin with Credentials
+- **Target App:** `MikuNime-FINAL-patched` (`com.mikunime.app.id`)
+- **Category:** CORS | **CVSS:** 9.1 | **CWE:** CWE-942
+- **Description:** Endpoint https://adservice.google.com/getconfig/pubvendors reflects arbitrary attacker Origin with credentials enabled, allowing authenticated cross-origin data theft.
+- **PoC / Vector:** `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+
+### 3.  [CRITICAL] CORS Wildcard/Arbitrary Origin with Credentials
+- **Target App:** `MikuNime-FINAL-unsigned` (`com.mikunime.app.id`)
+- **Category:** CORS | **CVSS:** 9.1 | **CWE:** CWE-942
+- **Description:** Endpoint https://adservice.google.com/getconfig/pubvendors reflects arbitrary attacker Origin with credentials enabled, allowing authenticated cross-origin data theft.
+- **PoC / Vector:** `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+
+### 4.  [CRITICAL] CORS Wildcard/Arbitrary Origin with Credentials
+- **Target App:** `MikuNime-FINAL` (`com.mikunime.app.id`)
+- **Category:** CORS | **CVSS:** 9.1 | **CWE:** CWE-942
+- **Description:** Endpoint https://adservice.google.com/getconfig/pubvendors reflects arbitrary attacker Origin with credentials enabled, allowing authenticated cross-origin data theft.
+- **PoC / Vector:** `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+
+### 5.  [CRITICAL] CORS Wildcard/Arbitrary Origin with Credentials
+- **Target App:** `MikuNime-NOPAIRIP-patched` (`com.mikunime.app.id`)
+- **Category:** CORS | **CVSS:** 9.1 | **CWE:** CWE-942
+- **Description:** Endpoint https://adservice.google.com/getconfig/pubvendors reflects arbitrary attacker Origin with credentials enabled, allowing authenticated cross-origin data theft.
+- **PoC / Vector:** `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+
+### 6.  [CRITICAL] CORS Wildcard/Arbitrary Origin with Credentials
+- **Target App:** `MikuNime-NOPAIRIP-unsigned` (`com.mikunime.app.id`)
+- **Category:** CORS | **CVSS:** 9.1 | **CWE:** CWE-942
+- **Description:** Endpoint https://adservice.google.com/getconfig/pubvendors reflects arbitrary attacker Origin with credentials enabled, allowing authenticated cross-origin data theft.
+- **PoC / Vector:** `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+
+### 7.  [CRITICAL] CORS Wildcard/Arbitrary Origin with Credentials
+- **Target App:** `MikuNime-NOPAIRIP` (`com.mikunime.app.id`)
+- **Category:** CORS | **CVSS:** 9.1 | **CWE:** CWE-942
+- **Description:** Endpoint https://adservice.google.com/getconfig/pubvendors reflects arbitrary attacker Origin with credentials enabled, allowing authenticated cross-origin data theft.
+- **PoC / Vector:** `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+
+### 8.  [CRITICAL] CORS Wildcard/Arbitrary Origin with Credentials
+- **Target App:** `MikuNime-merged-patched` (`com.mikunime.app.id`)
+- **Category:** CORS | **CVSS:** 9.1 | **CWE:** CWE-942
+- **Description:** Endpoint https://adservice.google.com/getconfig/pubvendors reflects arbitrary attacker Origin with credentials enabled, allowing authenticated cross-origin data theft.
+- **PoC / Vector:** `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+
+### 9.  [CRITICAL] CORS Wildcard/Arbitrary Origin with Credentials
+- **Target App:** `MikuNime-merged` (`com.mikunime.app.id`)
+- **Category:** CORS | **CVSS:** 9.1 | **CWE:** CWE-942
+- **Description:** Endpoint https://adservice.google.com/getconfig/pubvendors reflects arbitrary attacker Origin with credentials enabled, allowing authenticated cross-origin data theft.
+- **PoC / Vector:** `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+
+### 10.  [CRITICAL] CORS Wildcard/Arbitrary Origin with Credentials
+- **Target App:** `MikuNime_0.3.2-merged-universal` (`com.mikunime.app.id`)
+- **Category:** CORS | **CVSS:** 9.1 | **CWE:** CWE-942
+- **Description:** Endpoint https://adservice.google.com/getconfig/pubvendors reflects arbitrary attacker Origin with credentials enabled, allowing authenticated cross-origin data theft.
+- **PoC / Vector:** `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+
+### 11.  [CRITICAL] CORS Wildcard/Arbitrary Origin with Credentials
+- **Target App:** `MikuNime_0.3.2-patched-MITM` (`com.mikunime.app.id`)
+- **Category:** CORS | **CVSS:** 9.1 | **CWE:** CWE-942
+- **Description:** Endpoint https://adservice.google.com/getconfig/pubvendors reflects arbitrary attacker Origin with credentials enabled, allowing authenticated cross-origin data theft.
+- **PoC / Vector:** `curl -I -H 'Origin: https://evil.com' https://adservice.google.com/getconfig/pubvendors`
+
+### 12.  [CRITICAL] Application Is Debuggable
+- **Target App:** `vionime` (`com.kyorudesu`)
+- **Category:** CodeExecution | **CVSS:** 8.1 | **CWE:** CWE-215
+- **Description:** android:debuggable is true. An attacker with physical or ADB access can attach a debugger and execute arbitrary code in app context.
+- **PoC / Vector:** `jdb -connect com.sun.jdi.SocketAttach:hostname=localhost,port=8700`
+
+### 13.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `MikuNime_0.3.2` (`com.mikunime.app.id`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 14.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime_0.3.2` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 15.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime_0.3.2` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 16.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `MikuNime_MITM` (`com.mikunime.app.id`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/nsc_mitm.xml`
+
+### 17.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime_MITM` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 18.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime_MITM` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 19.  [HIGH] Cleartext HTTP Traffic Permitted
+- **Target App:** `ManhwaID_1.8.1_patched_single-aligned-debugSigned` (`com.ghavadev.mangaindo`)
+- **Category:** NetworkSecurity | **CVSS:** 7.4 | **CWE:** CWE-319
+- **Description:** The app allows unencrypted HTTP communication, exposing session tokens and user data to local network eavesdropping.
+- **PoC / Vector:** `android:usesCleartextTraffic="true" in AndroidManifest.xml`
+
+### 20.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `ManhwaID_1.8.1_patched_single-aligned-debugSigned` (`com.ghavadev.mangaindo`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_config.xml`
+
+### 21.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `ManhwaID_1.8.1_patched_single-aligned-debugSigned` (`com.ghavadev.mangaindo`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.ghavadev.mangaindo/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 22.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `ManhwaID_1.8.1_patched_single-aligned-debugSigned` (`com.ghavadev.mangaindo`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.ghavadev.mangaindo/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 23.  [HIGH] Cleartext HTTP Traffic Permitted
+- **Target App:** `ManhwaID_1.8.1_patched_single` (`com.ghavadev.mangaindo`)
+- **Category:** NetworkSecurity | **CVSS:** 7.4 | **CWE:** CWE-319
+- **Description:** The app allows unencrypted HTTP communication, exposing session tokens and user data to local network eavesdropping.
+- **PoC / Vector:** `android:usesCleartextTraffic="true" in AndroidManifest.xml`
+
+### 24.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `ManhwaID_1.8.1_patched_single` (`com.ghavadev.mangaindo`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_config.xml`
+
+### 25.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `ManhwaID_1.8.1_patched_single` (`com.ghavadev.mangaindo`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.ghavadev.mangaindo/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 26.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `ManhwaID_1.8.1_patched_single` (`com.ghavadev.mangaindo`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.ghavadev.mangaindo/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 27.  [HIGH] Cleartext HTTP Traffic Permitted
+- **Target App:** `base` (`com.ghavadev.mangaindo`)
+- **Category:** NetworkSecurity | **CVSS:** 7.4 | **CWE:** CWE-319
+- **Description:** The app allows unencrypted HTTP communication, exposing session tokens and user data to local network eavesdropping.
+- **PoC / Vector:** `android:usesCleartextTraffic="true" in AndroidManifest.xml`
+
+### 28.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `base` (`com.ghavadev.mangaindo`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.ghavadev.mangaindo/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 29.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `base` (`com.ghavadev.mangaindo`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.ghavadev.mangaindo/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 30.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `MikuNime-FINAL-patched` (`com.mikunime.app.id`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 31.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime-FINAL-patched` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 32.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime-FINAL-patched` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 33.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `MikuNime-FINAL-unsigned` (`com.mikunime.app.id`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 34.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime-FINAL-unsigned` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 35.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime-FINAL-unsigned` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 36.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `MikuNime-FINAL` (`com.mikunime.app.id`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 37.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime-FINAL` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 38.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime-FINAL` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 39.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `MikuNime-NOPAIRIP-patched` (`com.mikunime.app.id`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 40.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime-NOPAIRIP-patched` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 41.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime-NOPAIRIP-patched` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 42.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `MikuNime-NOPAIRIP-unsigned` (`com.mikunime.app.id`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 43.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime-NOPAIRIP-unsigned` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 44.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime-NOPAIRIP-unsigned` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 45.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `MikuNime-NOPAIRIP` (`com.mikunime.app.id`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 46.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime-NOPAIRIP` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 47.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime-NOPAIRIP` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 48.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `MikuNime-merged-patched` (`com.mikunime.app.id`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 49.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime-merged-patched` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 50.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime-merged-patched` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 51.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime-merged` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 52.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime-merged` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 53.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime_0.3.2-merged-universal` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 54.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime_0.3.2-merged-universal` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 55.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `MikuNime_0.3.2-patched-MITM` (`com.mikunime.app.id`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 56.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.GenericIdpActivity
+- **Target App:** `MikuNime_0.3.2-patched-MITM` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.GenericIdpActivity`
+
+### 57.  [HIGH] Unprotected Exported Activity: com.google.firebase.auth.internal.RecaptchaActivity
+- **Target App:** `MikuNime_0.3.2-patched-MITM` (`com.mikunime.app.id`)
+- **Category:** ComponentAbuse | **CVSS:** 7.2 | **CWE:** CWE-284
+- **Description:** Exported activity has no protecting permission and handles sensitive keywords.
+- **PoC / Vector:** `adb shell am start -n com.mikunime.app.id/com.google.firebase.auth.internal.RecaptchaActivity`
+
+### 58.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `vionime` (`com.kyorudesu`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 59.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `vionime_patched` (`com.kyorudesu`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 60.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `vionime_1.6.2_patched` (`com.kyorudesu`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 61.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `vionime_1.6.2_patched_signed` (`com.kyorudesu`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 62.  [HIGH] Network Security Config Trusts User Certificates
+- **Target App:** `vionime_friend_patched` (`com.kyorudesu`)
+- **Category:** NetworkSecurity | **CVSS:** 7.5 | **CWE:** CWE-295
+- **Description:** The app explicitly trusts user-installed CA certificates, allowing transparent HTTPS decryption with Burp Suite without runtime hooking.
+- **PoC / Vector:** `Check res/xml/network_security_config.xml`
+
+### 63.  [MEDIUM] Application Data Backup Allowed
+- **Target App:** `split_config.arm64_v8a` (`com.ghavadev.mangaindo`)
+- **Category:** DataExposure | **CVSS:** 5.5 | **CWE:** CWE-312
+- **Description:** android:allowBackup is true. An attacker can extract databases, shared preferences, and authentication tokens via adb backup.
+- **PoC / Vector:** `adb backup -f backup.ab -noapk com.ghavadev.mangaindo`
+
+### 64.  [MEDIUM] Application Data Backup Allowed
+- **Target App:** `split_config.en` (`com.ghavadev.mangaindo`)
+- **Category:** DataExposure | **CVSS:** 5.5 | **CWE:** CWE-312
+- **Description:** android:allowBackup is true. An attacker can extract databases, shared preferences, and authentication tokens via adb backup.
+- **PoC / Vector:** `adb backup -f backup.ab -noapk com.ghavadev.mangaindo`
+
+### 65.  [MEDIUM] Application Data Backup Allowed
+- **Target App:** `split_config.in` (`com.ghavadev.mangaindo`)
+- **Category:** DataExposure | **CVSS:** 5.5 | **CWE:** CWE-312
+- **Description:** android:allowBackup is true. An attacker can extract databases, shared preferences, and authentication tokens via adb backup.
+- **PoC / Vector:** `adb backup -f backup.ab -noapk com.ghavadev.mangaindo`
+
+### 66.  [MEDIUM] Application Data Backup Allowed
+- **Target App:** `split_config.ms` (`com.ghavadev.mangaindo`)
+- **Category:** DataExposure | **CVSS:** 5.5 | **CWE:** CWE-312
+- **Description:** android:allowBackup is true. An attacker can extract databases, shared preferences, and authentication tokens via adb backup.
+- **PoC / Vector:** `adb backup -f backup.ab -noapk com.ghavadev.mangaindo`
+
+### 67.  [MEDIUM] Application Data Backup Allowed
+- **Target App:** `split_config.xhdpi` (`com.ghavadev.mangaindo`)
+- **Category:** DataExposure | **CVSS:** 5.5 | **CWE:** CWE-312
+- **Description:** android:allowBackup is true. An attacker can extract databases, shared preferences, and authentication tokens via adb backup.
+- **PoC / Vector:** `adb backup -f backup.ab -noapk com.ghavadev.mangaindo`
+
+### 68.  [MEDIUM] Application Data Backup Allowed
+- **Target App:** `MikuNime` (``)
+- **Category:** DataExposure | **CVSS:** 5.5 | **CWE:** CWE-312
+- **Description:** android:allowBackup is true. An attacker can extract databases, shared preferences, and authentication tokens via adb backup.
+- **PoC / Vector:** `adb backup -f backup.ab -noapk `
+
+---
+*Generated by CoderSteam-BugExpo APK RedTeam Framework*
+
+---
+*BLACK-STAMPED BY CT-002*

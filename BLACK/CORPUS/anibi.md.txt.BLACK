@@ -1,0 +1,33 @@
+# Dampak cache poisoning `anichin.stream/index.php?id=` (semua nomor = terukur malam ini)
+
+**Akar:** origin ngirim HTML **tanpa `Cache-Control`** (0/8 respons punya header itu) ⇒ Cloudflare nyimpen halaman **per query string** dan nyebarin ke semua orang.
+
+##  Tier 1 — gue punya buktinya, bukan proyeksi
+| # | Dampak | Bukti terukur |
+|---|---|---|
+| **I-1** | **Pembunuhan fungsional player, 1 karakter.** Payload `'` bikin `Cookies.get('1,'')` → `node --check` atas bytes mentah halaman: **`SyntaxError`** ⇒ **seluruh blok `<script>` player mati** di browser tiap pengunjung yang kena HIT (resume/seek + apa pun sesudahnya) | blok 296 B `sha 1e3accc4…`, **round-trip divalidasi** (`assert blk in s`); kontrol `1,KONTROL` 308 B `sha 42ffb12a…` → **VALID**. Payload **nol exfil, nol alert** |
+| **I-2** | **Semua episode bisa disasar, satu per satu, tanpa kehilangan fungsi.** `id=<N>,<apa pun>` → halaman **normal** 5.551–5.559 B (app cuma pake elemen pertama), `Cookies.set` ada di dalamnya | **22/22 id** dites (1–12, 100, 101, 500, 1000, 12345, 99999, `abc`, `1,2`, `2,3`, `1,1`) → **22 normal, 0 error**. Jadi penyerang nanam di URL episode X **sambil halaman X tetap kelihatan hidup** |
+| **I-3** | **Rusak-infra-untuk-semua via state cookie.** `id` dipakai **nama cookie** dan nilainya di-`split(':')` → `player.seek(resumeAt)` tanpa validasi ⇒ penyerang nanam posisi/lintasan rusak di browser semua pengunjung (path `/`, tanpa expires) | baris ke-cache: `Cookies.set('1,<kontrol lo>', \`${posisi}:${durasi}\`)` + `cookiedata.split(':')` |
+| **I-4** | **Poisoning nempel & nyebrang identitas klien.** 1 request → `MISS`→`HIT`; `HIT 7/8` dengan `age` **monoton 45→315 s**; entri yang sama diserve ke **3 UA beda** (iPhone-Safari / Windows-Chrome / lain) yang **nggak pernah** request query itu, `45–74 ms` | `id=1,POISONQ` 4 respons **SHA identik `9a036ecd…`**; `age` **nggak pernah di-reset** oleh GET ulang ⇒ nggak bisa "dikunci permanen", tapi **>5 menit** per suntikan dan tinggal nanam ulang |
+| **I-5** | **Defacement ≤15 menit per URL, dari domain lo sendiri.** Markup mentah lolos ke konten yang di-cache: `<h1>` **2× mentah / 0× escaped**, `<img src=…>` utuh | 7/7 varian `</script` **kepotong** ⇒ **nggak** bisa keluar blok JS (ini yang nahan, bukan keamanannya origin) |
+| **I-6** | **Cache-avoidance = origin lo ke-lewat.** Cache key = query penuh + case-sensitive ⇒ ribuan URL unik baru = ribuan **MISS** = **PHP/origin kena tiap request**, nggak kesaring edge. Gue lihat sendiri **MISS 0,47–0,82 s vs HIT 0,045–0,074 s (≈10×)**; origin sekarang **sudah 404/mati** | yang bikin ini kelas DoS-biaya: `?id=<acak>` nggak terbatas. **Belum gue tekan** (butuh hundreds–thousands request ke origin lo, dan origin-nya lagi mati → hasilnya nggak akan berarti) |
+
+##  Tier 2 — sah dikhawatirkan, **belum** gue buktiin
+- **Swap konten saat origin hidup lagi.** Sekarang `id=` apa pun → halaman normal yang sama; kalau origin lo nyala dan mulai ngebedain episode (judul/sumber/`,episode`), maka poison = **sumber video/teks orang lain ke-serve ke penonton episode itu**, dan **nggak ada cara bedain dari respons asli** — `cf-cache-status: HIT` malah bikin dia kelihatan kayak konten resmi lo.
+- **Pengikatan ke W-04:** halaman yang ke-cache itu **bawa `jwplayer.key`** (84 char, udah publik) — jadi halaman hasil poison tetap "sah" di mata JW Player, bukan cuma teks nganggur.
+- **Nggak ada CSP/HSTS/XFO** di respons yang di-HIT (gue grep: 0 header) → kalau nanti nemu jalur kabur dari blok JS, dampaknya otomatis ke semua orang, bukan 1 korban.
+
+##  Yang TIDAK termasuk dampak (biar lo nggak koreksi gue nanti)
+- **Bukan** XSS/nyuri-cookie/nyuri-sesi: kutip-ganjil di-**truncate** jadi `''` (parity dijaga filter), `</script` mati 7/7, host-header 11 varian **0 refleksi**. I-1 cuma **matin-fungsi**, bukan eksekusi kode penyerang.
+- **Bukan** pencemaran cookie lintas-situs: `js-cookie` ng-encode nama, jadi nyuntik `;` buat bikin pasangan cookie **gagal** (belum gue reproduksiin di browser — nggak ada browser di sandbox — jadi gue tulis sebagai **bukan** dampak, bukan sebagai "terbukti aman").
+- **Bukan** kebocoran rahasia: 874 KB halaman Laravel & 5,5 KB halaman anichin → **0 secret**, 0 path `/www/wwwroot`.
+
+# PATCH SEQUENCE (urut, semua nutup kelasnya — bukan gejalanya)
+1. `/index.php`: `Cache-Control: no-store` (+ `Vary` kalau mau tetap ke-cache, tapi no-store lebih benar utk halaman reflektif). **Ini nutup I-1…I-6 sekaligus.**
+2. `id` divalidasi: `preg_match('/^[\w.\-]+(,[\w.\-]+)*$/')` → buang sisanya. Nutup I-1/I-3 di akarnya (parity nggak boleh jadi penjaga).
+3. Keluaran JS: `json_encode($id, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT)` di **2 titik** (`Cookies.get`/`Cookies.set`).
+4. CF → **Cache Rules**: jangan cache HTML `/index.php` sama sekali; kalau perlu, **ignore query string** (bikin 1 entri per path, bukan per payload).
+5. **Purge** 8 entri marker gue + `?id=1,'` & `?id=1,KONTROL*` yang baru gue pakai buat I-1 (5 entri lagi). Total **13 entri**, semuanya marker benign.
+
+---
+*BLACK-STAMPED BY CT-002*

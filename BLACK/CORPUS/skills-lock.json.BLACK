@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "skills": {
+    "Android-Pentesting-Skill": {
+      "source": "DragonJAR/Android-Pentesting-Skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "[REDACTED]"
+    }
+  }
+}
+
+---
+*BLACK-STAMPED BY CT-002*

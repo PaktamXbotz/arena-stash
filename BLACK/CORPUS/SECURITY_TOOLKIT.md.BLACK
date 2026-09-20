@@ -1,0 +1,527 @@
+# SECURITY TOOLKIT — Complete Setup Guide
+> Copy this file to your new laptop and run the commands in order.
+
+---
+
+## STEP 1: System Dependencies
+
+```bash
+sudo apt update && sudo apt install -y \
+  openjdk-21-jdk python3-pip zipalign apksigner keytool \
+  curl wget git golang-go unzip
+```
+
+## STEP 2: Python Packages
+
+```bash
+pip3 install frida frida-tools reflutter mitmproxy requests beautifulsoup4 sqlmap
+```
+
+## STEP 3: Binary Tools
+
+```bash
+mkdir -p ~/bin
+
+# apktool
+wget https://bitbucket.org/AhmedBafworker/apktool2/downloads/apktool_2.11.1.jar -O ~/bin/apktool.jar
+echo '#!/bin/bash
+java -jar ~/bin/apktool.jar "$@"' > ~/bin/apktool && chmod +x ~/bin/apktool
+
+# jadx
+wget https://github.com/skylot/jadx/releases/download/v1.5.1/jadx-1.5.1.zip -O /tmp/jadx.zip
+unzip /tmp/jadx.zip -d ~/jadx && ln -s ~/jadx/bin/jadx ~/bin/jadx
+
+# Go tools
+go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+go install github.com/projectdiscovery/katana/cmd/katana@latest
+
+# Add to PATH
+echo 'export PATH=$PATH:~/bin:$HOME/go/bin' >> ~/.bashrc
+source ~/.bashrc
+```
+
+## STEP 4: mitmproxy CA Certificate
+
+```bash
+# Start mitmproxy once to generate CA
+mitmproxy --listen-port 8080
+
+# Install cert on Android:
+# Copy ~/.mitmproxy/mitmproxy-ca-cert.pem to phone
+# Settings > Security > Encryption & Credentials > Install Certificate > CA Certificate
+```
+
+---
+
+## ALL TOOLS
+
+| Tool | Version | Purpose |
+|------|---------|---------|
+| apktool | 2.11.1 | APK decompile/recompile |
+| jadx | 1.5.1 | APK to Java source |
+| frida | 17.17.0 | Runtime hooking, SSL bypass |
+| reflutter | 0.8.6 | Flutter SSL bypass |
+| mitmproxy | 12.2.3 | HTTPS traffic interception |
+| sqlmap | 1.8.4 | SQL injection automation |
+| httpx | latest | HTTP probing/fingerprinting |
+| nuclei | latest | Vulnerability scanning |
+| subfinder | latest | Subdomain enumeration |
+| katana | latest | Web crawling |
+| keytool | JDK 21 | Java certificate management |
+| apksigner | Android SDK | APK signing |
+| zipalign | Android SDK | APK alignment |
+| Python | 3.12.3 | Scripting |
+| Java | OpenJDK 21 | Android tooling |
+| Go | latest | Security tool compilation |
+
+---
+
+## ALL SKILLS (200+)
+
+### HACKAGENT (100+ skills)
+
+#### Web Exploitation
+- web-xss
+- web-sqli
+- web-ssrf
+- web-csrf
+- web-idor
+- web-oauth
+- web-jwt
+- web-ssti
+- web-xxe
+- web-file-upload
+- web-open-redirect
+- web-cors
+- web-request-smuggling
+- web-cache-poisoning
+- web-race-conditions
+- web-rate-limit-bypass
+- web-deserialization
+- web-prototype-pollution
+- web-dependency-confusion
+- web-python-sandbox-escape
+- web-client-side-signing-bypass
+- web-auth-jwt
+- web-auth-session-handling
+- web-account-takeover
+- web-cypher-injection
+- web-jdbc-attacks
+- web-clickjacking
+- web-business-logic
+- web-subdomain-takeover
+- web-testing-checklist
+- web-saml
+- web-websocket
+- web-host-header
+- web-lfi-path-traversal
+- web-arsenal
+
+#### API Security
+- api-bola
+- api-fuzzing
+- api-graphql
+- api-grpc
+- api-mass-assignment
+- api-versioning
+- api-auth-attacks
+- api-mongo-agg-facet-bypass
+
+#### Mobile Security
+- mobile-android-assessment
+- mobile-ios-assessment
+- mobile-cert-pinning-bypass
+- mobile-deeplink-abuse
+- mobile-webview
+
+#### Cloud Security
+- cloud-aws
+- cloud-gcp
+- cloud-azure
+- cloud-kubernetes
+- cloud-docker-api-abuse
+- cloud-docker-registry
+- cloud-container-escape
+- cloud-s3-exposure
+- cloud-imds-ssrf
+- cloud-iam-privesc
+
+#### AI/ML Security
+- ai-prompt-injection
+- ai-jailbreak
+- ai-rag-poisoning
+- ai-supply-chain
+- ai-insecure-output-handling
+- ai-agent-tool-abuse
+- ai-mcp-security
+- ai-llm-dos
+- ai-model-extraction
+
+#### Reconnaissance
+- recon-arsenal
+- recon-osint
+- recon-subdomain-enum
+- recon-dns-analysis
+- recon-cloud-assets
+- recon-techstack-fingerprinting
+- recon-content-discovery
+- recon-js-analysis
+
+#### Network Attacks
+- network-ntlm-relay
+- network-service-attacks
+- network-pivoting-tunneling
+- network-credential-cracking
+- network-password-spraying
+- network-appliance-attacks
+
+#### Active Directory
+- ad-adcs
+- ad-pivot-arsenal
+- ad-delegation-abuse
+- ad-kerberoasting
+- ad-dacl-abuse
+
+#### Privilege Escalation
+- privesc-linux-gtfobins
+- privesc-windows-tokens
+- privesc-arsenal
+
+#### Social Engineering
+- social-eng-phishing
+- social-eng-vishing-pretext
+- social-eng-physical
+- social-eng-methodology
+
+#### Defense/Blue Team
+- defense-dfir-triage
+- defense-detection-sigma
+- defense-log-analysis
+- defense-hardening-baseline
+- defense-purple-team
+- defense-threat-modeling
+
+#### Reverse Engineering
+- reverse-eng-binary-triage
+- reverse-eng-deobfuscation
+- reverse-eng-firmware
+
+#### Wireless
+- wireless-evil-twin
+- wireless-wpa2-attacks
+
+#### Payloads
+- payloads-waf-bypass
+- payloads-xss-polyglots
+
+#### Tradecraft
+- tradecraft-scope-roe
+- tradecraft-complex-engagements
+
+#### Reporting
+- reporting-bug-bounty-writeup
+- reporting-triage-validation
+- reporting-pentest-report
+
+#### Code Review
+- code-review-python
+- code-review-nodejs
+- code-review-methodology
+- code-review-dangerous-sinks
+- code-review-secrets-detection
+- code-review-cicd
+
+#### Automation
+- automation-nuclei-templates
+- automation-recon-pipeline
+
+#### Exploit Development
+- exploit-poc-development
+- exploit-chaining
+
+---
+
+### GHOSTCAT (30 skills)
+- 01-program-selection
+- 02-scope-analysis
+- 03-threat-modeling-mindmap
+- 04-subdomain-enum
+- 05-asset-discovery
+- 06-fingerprinting
+- 07-js-analysis
+- 08-content-discovery
+- 09-continuous-monitoring
+- 10-idor-hunting
+- 11-auth-bypass
+- 12-ato-chains
+- 13-xss
+- 14-sqli
+- 15-ssrf
+- 16-ssti
+- 17-file-upload
+- 18-graphql
+- 19-jwt-attacks
+- 20-oauth-oidc
+- 21-business-logic
+- 22-subdomain-takeover
+- 23-cache-poisoning
+- 24-http-smuggling
+- 25-llm-ai-security
+- 26-mobile-recon-android
+- 27-cloud-misconfig
+- 28-triage-validation
+- 29-hackerone-reporting
+- 30-bugcrowd-reporting
+
+---
+
+### TRANSILIENCE (40+ skills)
+- authentication
+- api-security
+- client-side
+- server-side
+- injection
+- web-app-logic
+- reconnaissance
+- infrastructure
+- mobile-security
+- cloud-containers
+- cloud-defense
+- system
+- reverse-engineering
+- dfir
+- osint
+- cryptography
+- blockchain-security
+- github-workflow
+- pentest-engagement
+- hackthebox
+- hackerone
+- cve-poc-generator
+- cve-risk-score
+- risk-prioritiser
+- attack-path-stitcher
+- regression-sweep
+- coordination
+- ti-ingest
+- ai-threat-testing
+- network-appliance-offensive
+- firewall-review
+- pci-secure-software
+- source-code-scanning
+- skill-update
+- skill-prune
+- script-generator
+- transilience-report-style
+- essential-tools
+- patt-fetcher
+- protect-with-password
+- authenticated-session-acquisition
+- social-engineering
+
+---
+
+### WEB3 (11 skills)
+- web3-hunt-foundation
+- web3-bug-classes
+- web3-audit
+- web3-poc-foundry
+- web3-grep-arsenal
+- web3-triage-report
+- web3-hunt-zksync-era
+- web3-methodology-research
+- web3-case-study-role-misconfig
+- web3-solidity-audit-mcp
+- web3-ai-tools
+
+---
+
+### CLAUDE REVERSE (5 skills)
+- apk-reverse
+- ida-reverse
+- radare2
+- reverse-engineering
+- mcp-js-reverse-playbook
+
+---
+
+## QUICK START COMMANDS
+
+### APK Analysis
+```bash
+# Decompile APK to smali
+apktool d app.apk -o output/
+
+# Decompile APK to Java
+jadx -d output/ app.apk
+
+# Recompile APK
+apktool b output/ -o patched.apk
+
+# Sign APK
+keytool -genkey -v -keystore debug.keystore -alias debug -keyalg RSA -keysize 2048 -validity 36500 -storepass android -keypass android -dname "CN=Debug"
+apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out signed.apk patched.apk
+
+# Align APK
+zipalign -f 4 signed.apk final.apk
+```
+
+### Flutter SSL Bypass
+```bash
+# Patch Flutter SSL verification
+reflutter app.apk
+
+# Sign and install the output
+apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out signed.apk release.RE.apk
+adb install -r signed.apk
+```
+
+### Frida SSL Bypass
+```bash
+# Start frida server on phone
+adb push frida-server /data/local/tmp/
+adb shell chmod 755 /data/local/tmp/frida-server
+adb shell /data/local/tmp/frida-server &
+
+# Bypass SSL pinning
+frida -U -f com.package.name -l ssl_bypass.js --no-pause
+```
+
+### Traffic Interception
+```bash
+# Start mitmproxy
+mitmproxy --listen-port 8080
+
+# Or use mitmdump for logging
+mitmdump -w capture.flow
+
+# Convert to HAR format
+mitmdump -r capture.flow -w capture.har
+```
+
+### SQL Injection
+```bash
+# Basic SQLi scan
+sqlmap -u "http://target.com/page?id=1" --dbs
+
+# With POST data
+sqlmap -u "http://target.com/login" --data="user=admin&pass=test" --dbs
+
+# With cookies
+sqlmap -u "http://target.com/page?id=1" --cookie="session=abc123" --dbs
+```
+
+### Subdomain Enumeration
+```bash
+# Passive enumeration
+subfinder -d target.com -o subs.txt
+
+# With httpx probing
+subfinder -d target.com | httpx -status-code -title
+```
+
+### Vulnerability Scanning
+```bash
+# Basic scan
+nuclei -u http://target.com
+
+# With templates
+nuclei -u http://target.com -t cves/
+
+# Scan multiple targets
+nuclei -l urls.txt -t vulnerabilities/
+```
+
+### Content Discovery
+```bash
+# Directory fuzzing
+ffuf -u http://target.com/FUZZ -w wordlist.txt
+
+# Parameter fuzzing
+ffuf -u http://target.com/page?FUZZ=test -w params.txt
+
+# Subdomain takeover
+nuclei -u target.com -t takeovers/
+```
+
+---
+
+## FILES TO COPY
+
+```
+~/.config/opencode/agents/potato-godmode.md
+~/.claude/skills/                     (all subdirectories)
+~/.config/opencode/skills/
+~/.mitmproxy/                         (CA certificates)
+```
+
+---
+
+## ANDROID SSL BYPASS CHECKLIST
+
+1. [ ] Install mitmproxy CA cert on phone
+2. [ ] Patch APK with reflutter (for Flutter apps)
+3. [ ] Add network_security_config.xml (for Android HTTP)
+4. [ ] Use Frida for runtime hooking (if needed)
+5. [ ] Sign and install patched APK
+6. [ ] Start mitmproxy and open app
+7. [ ] Verify traffic is visible in mitmproxy
+
+---
+
+## NETWORK_SECURITY_CONFIG.XML
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates overridePins="true" src="user" />
+            <certificates overridePins="true" src="debug" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">target.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates overridePins="true" src="user" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>
+```
+
+---
+
+## FRIDA SSL BYPASS SCRIPT
+
+```javascript
+// ssl_bypass.js
+Java.perform(function() {
+    var TrustManagerImpl = Java.use('com.android.org.conscrypt.TrustManagerImpl');
+    TrustManagerImpl.verifyChain.implementation = function(untrustedChain, trustAnchorChain, host, clientAuth, ocspData, tlsSctData) {
+        return untrustedChain;
+    };
+
+    var SSLContext = Java.use('javax.net.ssl.SSLContext');
+    var TrustAllManager = Java.use('TrustAllManager');
+    var tm = TrustAllManager.$new();
+    var sslContext = SSLContext.getInstance('TLS');
+    sslContext.init(null, [tm], null);
+
+    var HttpsURLConnection = Java.use('javax.net.ssl.HttpsURLConnection');
+    HttpsURLConnection.setDefaultSSLSocketFactory.overload('javax.net.ssl.SSLSocketFactory').implementation = function(factory) {};
+    HttpsURLConnection.setDefaultHostnameVerifier.overload('javax.net.ssl.HostnameVerifier').implementation = function(verifier) {};
+});
+```
+
+---
+
+*Generated: 2026-09-08*
+*Total Skills: 200+*
+*Total Tools: 15+*
+
+---
+*BLACK-STAMPED BY CT-002*

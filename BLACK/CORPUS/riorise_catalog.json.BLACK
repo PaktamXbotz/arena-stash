@@ -1,0 +1,29 @@
+{
+  "repositories": [
+    "analytics",
+    "analytics-ingest-service",
+    "chatwoot-bot",
+    "external-discord-bot",
+    "game-api",
+    "game-api-go",
+    "geoip-service",
+    "infra/airflow",
+    "landing-1",
+    "master-api",
+    "max-alerts-relay",
+    "network-probe-exporter",
+    "notes",
+    "omp-agent",
+    "omp-info-service",
+    "push-panel",
+    "push-service",
+    "referrals",
+    "shop-service",
+    "[REDACTED]",
+    "stream-metrics-exporter",
+    "telegram-bank-bot"
+  ]
+}
+
+---
+*BLACK-STAMPED BY CT-002*

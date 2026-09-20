@@ -1,0 +1,125 @@
+# anichin.stream Cache Poisoning — PoC Report
+
+**Date:** 2026-09-11
+**Target:** https://anichin.stream/index.php?id=
+**Status:** All findings VALIDATED with live PoC
+
+---
+
+## Root Cause
+
+Origin server sends HTML **without `Cache-Control` header**. Cloudflare caches responses **per query string** and serves them to ALL users regardless of User-Agent.
+
+```
+Cache-Control: MISSING
+CF-Cache-Status: HIT (after first request)
+Vary: Accept-Encoding (only)
+```
+
+---
+
+## Validated Findings
+
+### I-1: Player Kill [HIGH]
+
+**Payload:** `?id=1,'`
+
+**Mechanism:** Single quote closes the JS string in `Cookies.get('1,''')`, creating a `SyntaxError` that kills the entire `<script>` block. The video player fails to initialize for ALL visitors until cache expires.
+
+**Evidence:**
+- SHA: `90ef4ffd4aa346fe` — identical across all User-Agents
+- Cross-UA: iPhone-Safari  | Windows-Chrome  | Android  | curl 
+- Cache persistence: HIT with age >175s
+- JS break: `Cookies.get('1,''')` → SyntaxError
+
+**Impact:** Video player broken for all visitors. Resume/seek functionality dead.
+
+---
+
+### I-3: Cookie State Corruption [MEDIUM]
+
+**Payload:** `?id=1,HACKED_POS:99999`
+
+**Mechanism:** The `id=` parameter becomes the cookie name in `Cookies.set('id', ...)`. Attacker controls the cookie name with arbitrary values. Corrupted cookie is read back on page load and used to set player resume position.
+
+**Evidence:**
+- SHA: `52b0fe1d3ae7eb85` — persisted in cache
+- Cross-UA delivery: confirmed (VictimBrowser UA gets same HIT)
+- Cookie: `Cookies.set('1,HACKED_POS:99999', ...)`
+
+**Impact:** Corrupted player state for all visitors (resume position, duration).
+
+---
+
+### I-5: Raw HTML Injection [LOW]
+
+**Payloads tested:**
+- `?id=1,<h1>HACKED</h1>` → `<h1>` appears raw in response
+- `?id=1,<img src=x onerror=alert(1)>` → `<img>` appears raw
+- `?id=1,<script>alert(1)</script>` → `<script>` appears raw
+
+**Limitation:** Payload is inside a `<script>` block. The `</script>` closing tag is TRUNCATED by server filter (7/7 variants fail). Cannot escape JS context to inject standalone HTML.
+
+**Evidence:**
+- Raw HTML present: YES (not HTML-escaped)
+- Script escape: FAILED (all `</script>` variants truncated)
+- Context: Inside JS string in `Cookies.get()` / `Cookies.set()`
+
+**Impact:** Limited to JS-breaking payloads (I-1). Cannot achieve standalone defacement or XSS.
+
+---
+
+### I-6: Cache DoS [MEDIUM]
+
+**Mechanism:** Each unique `id=` value creates a new cache MISS, forcing the origin PHP server to process the request. Unlimited unique URLs = unlimited origin hits.
+
+**Evidence:**
+- 20/20 unique URLs = MISS (0% cache hit rate)
+- Avg origin response time: 613ms
+- Cache persistence: re-request of same URL = HIT
+
+**Impact:** Origin server receives all requests. No cache protection. Resource exhaustion vector.
+
+---
+
+### I-4: Cache Persistence [INFO]
+
+**Mechanism:** Poisoned response is cached and served to ALL clients regardless of User-Agent. One injection affects all visitors.
+
+**Evidence:**
+- SHA identical across 4 different User-Agents
+- Age monotonically increases (cache not reset by re-requests)
+- Cache duration: >5 minutes per injection
+
+---
+
+## Attack Chain
+
+```
+1. Attacker requests: /index.php?id=1,'     (MISS → poison)
+2. Cloudflare caches the poisoned response
+3. ALL subsequent visitors get the cached response
+4. Player is broken for everyone
+5. After ~5 min cache expires, attacker re-injects
+```
+
+---
+
+## Files
+
+- `anichin_poc.py` — Full PoC script (all findings)
+- `anichin_poc_results.json` — Validation results
+- `anibi.md.txt` — Original vulnerability analysis
+
+---
+
+# PATCH SEQUENCE
+
+1. **`Cache-Control: no-store`** on `/index.php` — closes I-1 through I-6
+2. **Validate `id=` parameter:** `preg_match('/^[\w.\-]+(,[\w.\-]+)*$/')` — blocks injection
+3. **JSON-encode output:** `json_encode($id, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT)` — prevents raw HTML
+4. **Cloudflare Cache Rules:** Don't cache HTML `/index.php`; ignore query strings
+5. **Purge cached entries** — 13 total poisoned URLs
+
+---
+*BLACK-STAMPED BY CT-002*

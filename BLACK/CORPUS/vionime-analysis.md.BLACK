@@ -1,0 +1,171 @@
+# VioNime APK Analysis — com.kyorudesu v1.6.7
+
+**Package:** `com.kyorudesu` (VioNime)
+**Version:** 1.6.7 (versionCode 42)
+**Size:** 16,671,931 bytes
+**SDK:** target 35 / compile 35 / min 24
+**Backend:** `vionime.xyz` (Cloudflare, Node.js + Redis)
+**Date:** 2026-08-30
+
+---
+
+## CRITICAL Findings
+
+### 1. `debuggable=true` in Production APK
+- **Location:** `AndroidManifest.xml` → `android:debuggable="true"`
+- **Impact:** Full app-level exploit via `adb shell run-as com.kyorudesu` — access private data, keystores, tokens, attach debugger, extract backup
+- **CVSS:** Critical
+
+### 2. Attestation Bypass (HARDCODED RESPONSE)
+- **Location:** `assets/www/js/app.js:163`
+- **Code:** `body: JSON.stringify({ nonce, response: 'webview_client', deviceFp: deviceFp })`
+- **Impact:** `webview_client` is a static string — no cryptographic proof. Loop challenge→verify yields valid session tokens (30min TTL). Enables full API access without device.
+- **Note:** Server may have patched — currently returns `INVALID_RESPONSE`. Verify with Frida on device.
+
+### 3. Username Takeover via `PUT /api/me`
+- **Endpoint:** `PUT /api/me` with `{username, bio}`
+- **Impact:** No server-side uniqueness validation. Attacker can claim any username including admin. Login resolves to attacker's account when duplicate.
+- **CVSS:** Critical
+
+---
+
+## HIGH Findings
+
+### 4. IDOR — Sequential Profile Enumeration (554 Users)
+- **Endpoint:** `GET /api/user/profile/{id}` with `X-Session-Token`
+- **Data leaked:** `balance`, `isPremium`, `adminRole`, `vipuser`, `donasiTotal`, `investorRank`, `badgeUnlimited`, `primeTierAktif`
+- **Admin accounts exposed:** 6 (Yareee, Azey, Zxuri, Alisaa, dira, NakanoMiku)
+- **Impact:** Full userbase scrape — financial data, admin roles, premium status
+
+### 5. IDOR — Team Chat Private Messages
+- **Endpoint:** `GET /api/team-chat/{teamId}`
+- **Impact:** Read private party chat messages without being a member
+
+### 6. Admin Panel JS Source Code Bundled in APK
+- **Location:** `assets/www/js/admin/` (12 modules, 345KB)
+- **Modules:** core.js, content.js, dashboard.js, events.js, finance.js, upload.js, users.js, system.js, storage.js, server.js, pages-shell.js, waifupet.js
+- **Impact:** Full admin API surface exposed — `db/read`, `db/write`, `storage/files`, `force-logout-user`, `generate-code`, `publish-apk`
+
+### 7. `trust-anchors src="user"` — MITM via User CA
+- **Location:** `res/xml/network_security_config.xml`
+- **Impact:** TLS traffic can be intercepted with user-installed CA certificate. No cert pinning.
+- **Note:** `allowBackup=false` and `cleartextTrafficPermitted=false` are good
+
+---
+
+## MEDIUM Findings
+
+### 8. Health Endpoint Info Leak
+- **Endpoint:** `GET /api/health`
+- **Data leaked:** PID, memory (RSS/heap), Redis status, cache hit ratio, queue stats, event loop lag
+- **Impact:** Infrastructure fingerprinting for targeted attacks
+
+### 9. Admin Enumeration via Login Error Oracle
+- **Endpoint:** `POST /api/admin/login` with desktop User-Agent
+- **Error diff:** "Anda tidak memiliki akses admin" (non-admin) vs "Password salah" (admin) vs "Username tidak ditemukan" (not found)
+- **Impact:** Enumerate admin accounts without brute force
+
+### 10. JS Bridge — 20+ Methods Exposed to WebView
+- **Bridge:** `AndroidBridge` (SafeWebAppInterface)
+- **Key methods:** `masukDenganGoogle()`, `unduhEpisode()`, `bagikanGambar()`, `showNotification()`, `getDeviceId()`, `getDataUsage()`
+- **Risk:** If XSS exists in SPA, bridge methods can be called from web context
+
+### 11. Socket.io — 6 Namespaces Without Auth
+- **Namespaces:** `/`, `/nobar`, `/chat`, `/party`, `/admin`, `/live`
+- **Impact:** All accept connections without authentication
+
+### 12. Danmaku Spam — No Rate Limit, No Delete
+- **Endpoint:** `POST /api/danmaku/{animeId}/{episode}`
+- **Impact:** Permanent spam, no delete endpoint (returns 500), zero rate limiting
+
+---
+
+## LOW Findings
+
+### 13. `signingKey` Leaked to Client
+- **Location:** `GET /api/me` response
+- **Value:** 32-byte hex (64 chars)
+- **Impact:** Server-side key exposed — potential JWT/key forgery if used elsewhere
+
+### 14. PII in Usernames
+- **Endpoint:** `GET /api/search-users?q=`
+- **Finding:** Email addresses as usernames (e.g., `enggelpudi@gmail.com`)
+- **Impact:** PII exposure via search
+
+### 15. RECORD_AUDIO Permission Without Justification
+- **Permission:** `RECORD_AUDIO` + `MODIFY_AUDIO_SETTINGS`
+- **Impact:** Excessive permissions for anime streaming app — potential privacy concern
+
+---
+
+## Firebase Analysis
+
+| Surface | Status |
+|---------|--------|
+| API Key | `AIzaSyCDG[REDACTED]` (client ID only) |
+| App ID | `1:898448725715:android:e934c2c95eec58dab7e626` |
+| GCM Sender | `898448725715` |
+| RTDB | `vionime.firebaseio.com` → 404 (locked) |
+| Storage | `vionime.firebasestorage.app` → 404 (locked) |
+| Firestore | Not enabled (403) |
+| Password Login | `PASSWORD_LOGIN_DISABLED` |
+| OAuth Client | `898448725715-g4hq521a7ol5foeuoo76abjg2537tu5t.apps.googleusercontent.com` |
+
+**Verdict:** Firebase properly locked — good security practice.
+
+---
+
+## JS Bridge Methods (SafeWebAppInterface)
+
+| Method | Access | Risk |
+|--------|--------|------|
+| `masukDenganGoogle()` | Google OAuth | Auth flow exposure |
+| `unduhEpisode(metaJson)` | File system | Potential path traversal |
+| `bagikanGambar(base64, teks)` | Share intent | Data exfil vector |
+| `showNotification(title, message)` | System notifications | Phishing |
+| `getDeviceId()` | Android Settings | Device tracking |
+| `getDataUsage()` | Network stats | Info leak |
+| `getVersion()` | App version | Fingerprinting |
+| `isNativeApp()` | Boolean | App detection |
+| `adaKoneksi()` | Network state | Connectivity check |
+| `infoPenyimpanan()` | Storage info | Disk usage leak |
+| `setEmbedAktif(bool)` | UI state | Embed control |
+
+---
+
+## Endpoint Summary (from assets/www)
+
+- **Total endpoints mapped:** 243
+- **Admin panel:** 90+ endpoints (db/read, db/write, storage, users, finance, events, upload)
+- **Public API:** health, version, feed, leaderboard, teams, events, attestation, user profiles
+- **Private (401):** /api/me, /api/check-premium, /api/party-jadwal, /api/donasi/config
+- **Admin (401+DESKTOP_ONLY):** /api/admin/*
+
+---
+
+# GRAVITY Summary
+
+| Severity | Count | Findings |
+|----------|-------|----------|
+| **CRITICAL** | 3 | debuggable=true, attestation bypass, username takeover |
+| **HIGH** | 4 | IDOR profiles, IDOR team-chat, admin JS leaked, MITM via user CA |
+| **MEDIUM** | 5 | health leak, admin enum, JS bridge, socket.io, danmaku spam |
+| **LOW** | 3 | signingKey leak, PII in username, excessive permissions |
+
+**Total: 15 findings**
+
+---
+
+## Tools Used
+- jadx (decompilation)
+- curl (backend probes)
+- grep (secret/endpoint discovery)
+
+## Next Steps
+1. Frida dynamic analysis — verify attestation bypass on device
+2. MITM proxy — capture full API traffic with user CA
+3. Write operation testing — order IDOR, donasi IDOR
+4. Admin panel exploitation — if admin credentials obtained
+
+---
+*BLACK-STAMPED BY CT-002*

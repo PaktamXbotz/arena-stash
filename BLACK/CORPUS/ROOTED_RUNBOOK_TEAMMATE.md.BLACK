@@ -1,0 +1,88 @@
+# Rooted-Device Runbook (to hand a teammate)
+
+Use ONLY when a real rooted device / emulator with ADB is available. Copy/paste-ready.
+
+## 0. Device prerequisites
+- USB debugging ON (Settings → Developer Options → USB debugging), OR a rooted emulator.
+- `adb devices` shows the device as `device` (authorize the RSA prompt).
+- Rooted device → magisk boot completed. Emulator → adb reachable.
+
+## 1. Fast passive capture via adb (no Frida, no rebuild)
+```bash
+adb shell settings put global http_proxy 10.0.2.2:8888   # emulator host alias
+adb shell settings put global http_proxy <PC-LAN-IP>:8888
+# install the mitm CA as a USER cert:
+adb push ~/.mitmproxy/mitmproxy-ca-cert.cer /sdcard/
+# (no CLI for user certs — flow: Settings → Security → Install from storage)
+# check traffic:
+mitmweb --listen-port 8888 &
+```
+
+## 2. frida-server on the device
+```bash
+uname -a            # or: adb shell getprop ro.product.cpu.abi → arm64-v8a / x86_64
+adb push frida-server-<version>-android-arm64 /data/local/tmp/frida-server
+adb shell "chmod 755 /data/local/tmp/frida-server"
+adb shell "/data/local/tmp/frida-server &" 
+adb forward tcp:27042 tcp:27042
+frida -U -f <package> --no-pause   # test connectivity
+```
+Laptop side: `pip install frida-tools` and use repo scripts (apkunpacker/FridaScripts,
+abhirampatel/frida-android-scripts). Universal unpin + root-bypass + token-extract live there.
+
+## 3. objection (automated, scripted calls, no custom JS required)
+```bash
+pip install --break-system-packages objection
+objection -g <package> explore
+# then inside the repl:
+# android sslpinning disable
+# android root disable
+# android intent launch_activity com.target.Activity
+# android heap search patterns --string "api_key|token|secret|Authorization"
+# android keystore list
+# android smtp get_class_methods com.target.MainActivity
+exit
+```
+
+## 4. frida-dexdump for packed apps (android-runtime-frida skill §6)
+```bash
+pip install --break-system-packages frida-dexdump
+frida-dexdump -U -f <package>            # dumps dexdump/ dir
+jadx -d out <package>/*.dex              # real code of a packed target
+```
+
+## 5. drozer (component sweep — android-ipc-attack skill §6)
+```bash
+adb install drozer.apk
+adb forward tcp:31415 tcp:31415
+adb shell am start -n com.mwr.dz/.MainActivity; adb shell am broadcast -a com.mwr.dz.AIDL_INIT -e com.mwr.dz.transient true
+drozer console connect
+run app.package.attacksurface <pkg>
+run scanner.provider.injection -a <pkg>
+run scanner.provider.traversal -a <pkg>
+```
+
+## 6. Full rooted loop (deepest result, send artifacts back)
+```
+1. apkid <apk>                       → protectors to expect
+2. frida-dexdump -U -f <pkg>          → real dex (if packed)
+3. jadx -d dump/ <pkg>/*.dex
+4. objection ... android sslpinning disable
+5. adb shell settings put global http_proxy <PC>:8888
+6. set phone to trust mitm CA
+7. frida hooks: token_extract.js + key_capture.js (from android-runtime-frida skill)
+8. drive UI / login / payment → capture API in mitmweb
+9. ship HAR + dumped dex + hook output + screenshot evidence here
+```
+
+## 7. What the teammate should send back (always)
+- `.har` of the session, or the PCAP/CSV
+- `frida-dexdump` output dir (real DEX) if packed
+- Hook stdout (`frida -U -f <pkg> -l token_extract.js > hook.log`)
+- Screenshot of every PoC (evidence-hygiene skill rules: mask cookies/PII)
+- Patched APK if they produced one
+
+Format everything with the existing sweep deliverable layout so it lands in raw_findings.json cleanly.
+
+---
+*BLACK-STAMPED BY CT-002*

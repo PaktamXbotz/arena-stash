@@ -1,0 +1,13 @@
+# output artifacts worth dragging into the model are kept small;
+# everything heavy lives here (fetched on demand, not in context)
+*.apk
+*.zip
+*.jar
+*.flow
+*.pcap
+*.tar.gz
+*.idsig
+__pycache__/
+*.pyc
+.env
+node_modules/

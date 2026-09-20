@@ -1,0 +1,180 @@
+# ALSCO HackerOne — Full Findings Report
+## Program: ALSCO Managed Bug Bounty (nijxmsec)
+## Date: September 9, 2026
+
+---
+
+# TARGET GRID 1: sandbox.securegateway.com
+
+**Stack**: PHP + nginx + Secure Gateway WAF (ModSecurity + custom rules)
+
+### ALSCO-01: Upload Panel — File Upload Honeypot
+- **Severity**: Informational
+- **CVSS**: 0.0
+- **Endpoint**: `POST /up/`
+- **Description**: The upload panel at `/up/` accepts file uploads but the uploaded file is never stored in any web-accessible location. The server returns a success message (`<p class='success-message'>File uploaded successfully!</p>`) but the file cannot be found at any of 17+ common paths tested.
+- **Evidence**:
+  - Clean PNG upload → 200 OK with success message
+  - Checked paths: `/uploads/`, `/up/files/`, `/files/`, `/tmp/`, `/var/`, `/uploads/shell.png`, etc. — ALL 404
+  - Content detector (virus scanner) deletes files with PHP code, `<script>`, `onload=` → error `G.S.3 err=28`
+  - Blocked extensions: `.php`, `.phtml`, `.pht`, `.phar`, `.php5`, `.phpps`, `.txt`, `.shtml`
+  - Allowed extensions: `.png`, `.jpg`, `.gif`, `.svg`, `.html`, `.webp`
+- **Impact**: The upload panel is a honeypot — files are accepted but never stored. No real RCE or data exfiltration possible.
+- **Status**: No real impact. Informational only.
+
+### ALSCO-02: WAF Rule Information Disclosure
+- **Severity**: Informational
+- **CVSS**: 0.0
+- **Endpoint**: All endpoints (via redirect parameters)
+- **Description**: The Secure Gateway WAF leaks its rule names via redirect parameters in error responses. Each rule name reveals specific WAF behavior (e.g., `G.S.941100` = XSS, `G.S.942100` = SQLi, `G.S.930100` = path traversal).
+- **Evidence**: 11+ rules mapped:
+  - `G.S.3` — Content detector (virus scanner)
+  - `G.S.8` — Restricted file/directory access
+  - `G.S.14` — POST without valid session cookies
+  - `G.S.54` — Template syntax detection
+  - `G.S.211210` — Backtick/pipe/command chars
+  - `G.S.920270` — Null bytes
+  - `G.S.921150` — HTML entities (decoded before checking)
+  - `G.S.930100` — Path traversal
+  - `G.S.932130` — SSTI detection
+  - `G.S.941100` — XSS libinjection
+  - `G.S.941160` — XSS Category 2
+  - `G.S.942100` — SQL injection
+- **Impact**: Helps attacker understand WAF behavior to craft bypass attempts.
+- **Status**: Informational. No direct exploit.
+
+### ALSCO-03: Phone Verification Auth System — No Bypass Found
+- **Severity**: Informational
+- **CVSS**: 0.0
+- **Endpoint**: `POST /auth/check.php`
+- **Description**: The admin panel (`/admin/`) requires phone verification via `/auth/check.php`. The system accepts `csrf_token_phone`, `phonenumber`, `SecureGateway_Button` parameters. SQLi blocked by WAF (G.S.942100). Empty CSRF/phone returns same error page.
+- **Evidence**:
+  - POST with empty fields → `index.php?action=false&msg=1`
+  - SQLi payloads → blocked by G.S.942100
+  - No timing differences between valid/invalid phone numbers
+- **Impact**: Admin panel protected. No bypass found.
+- **Status**: No real impact.
+
+---
+
+# TARGET GRID 2: sandbox-royal.securegateway.com
+
+**Stack**: Royal CMS (custom PHP) + jQuery 3.5.1 + Splide 4.0.17 + VenoBox 1.8.9 + nginx + Secure Gateway WAF
+
+### ALSCO-04: Stored XSS via innerHTML in Complaint Search (WAF-Blocked)
+- **Severity**: Medium (potential for High if WAF bypass found)
+- **CVSS**: 6.1 (Medium) → 8.1 (High) if exploitable
+- **Endpoint**: `POST /home/program/program-complaint-search.php`
+- **Description**: The complaint search endpoint returns complaint data using JavaScript `innerHTML`, which renders HTML tags. User-supplied complaint data (name, subject, message) gets reflected in `<b>` tags within the response. This creates a stored XSS attack chain: insert complaint → admin searches → innerHTML renders XSS → admin session hijacked.
+- **Evidence**:
+  - Complaint insert endpoint: `POST /home/program/program-complaint-insert.php`
+  - Search endpoint uses `innerHTML` to display complaint data
+  - CSRF + math CAPTCHA on insert (both bypassable — token extracted, math solved)
+  - Successful insert returns tracking number (e.g., `327567553`)
+  - Search returns `!+-+!` separated data
+- **Attack Chain**:
+  1. Extract CSRF token from complaint page
+  2. Solve math CAPTCHA (extractable from HTML)
+  3. Insert complaint with XSS payload in name/message
+  4. Admin searches for complaint
+  5. innerHTML renders XSS → steal admin session cookie
+- **BLOCKER**: WAF rule G.S.941100 blocks ALL angle brackets (`<`, `>`) in POST body. All standard XSS payloads blocked.
+- **WAF Bypass Attempts (ALL FAILED)**:
+  - Double-encoding (`%253Cscript%253E`) → blocked
+  - Unicode (`%C0%BCscript`) → blocked
+  - Null bytes (`%00<script>`) → blocked
+  - `<details open ontoggle=alert(1)>` → blocked
+  - `${7*7}` SSTI → blocked by G.S.932130
+  - `` `id` `` backtick → blocked by G.S.211210
+  - `hello|id` pipe → blocked by G.S.211210
+  - `union select` SQLi → blocked by G.S.942100
+  - `SLEEP(5)` time-based SQLi → blocked by G.S.942100
+  - JSON Content-Type → ignored (not processed)
+  - XML Content-Type → ignored (not processed)
+- **Impact**: If WAF bypass found → admin account takeover via stored XSS. Currently blocked.
+- **Status**: BLOCKED by WAF. Needs clean IP to continue testing.
+
+### ALSCO-05: Complaint System — CSRF + Math CAPTCHA Bypass
+- **Severity**: Informational
+- **CVSS**: 0.0
+- **Endpoint**: `POST /home/program/program-complaint-insert.php`
+- **Description**: The complaint form has CSRF token and math CAPTCHA protections, but both are trivially bypassable. The CSRF token is extractable from the page HTML. The math CAPTCHA supports +, -, * operators and the equation is visible in the page source.
+- **Evidence**:
+  - CSRF token extracted via regex: `csrf_token\s*=\s*'([^']+)'`
+  - Math CAPTCHA extracted via regex: `(\d+)\s*([\+\-\*])\s*(\d+)\s*&nbsp;\s*=\s*&nbsp;`
+  - Successful insert with solved CAPTCHA returns tracking number
+- **Impact**: Protections are bypassable but not directly exploitable.
+- **Status**: Informational.
+
+### ALSCO-06: 7 AJAX Endpoints Discovered
+- **Severity**: Informational
+- **CVSS**: 0.0
+- **Endpoints**:
+  1. `POST /home/program/program-search-fetch.php` — search
+  2. `POST /home/program/program-complaint-insert.php` — complaint insert
+  3. `POST /home/program/program-complaint-search.php` — complaint search (innerHTML)
+  4. `POST /home/program/program-contact-send.php` — contact form
+  5. `POST /home/program/program-tender-fetch.php` — tender search
+  6. `POST /home/program/program-video-fetch.php` — video search
+  7. `GET /home/program/program-topic-fetch.php` — topic page
+- **Description**: Royal CMS exposes 7 PHP AJAX endpoints. Most accept POST data and return JSON or HTML fragments.
+- **Impact**: Normal functionality. No direct vulnerabilities found.
+- **Status**: Informational.
+
+### ALSCO-07: jQuery 3.5.1 + VenoBox 1.8.9 — Known CVEs
+- **Severity**: Informational
+- **CVSS**: 0.0
+- **Endpoint**: All pages (loaded via `<script>` tags)
+- **Description**: The Royal CMS loads jQuery 3.5.1 and VenoBox 1.8.9. jQuery 3.5.1 has known XSS CVEs (CVE-2020-11022, CVE-2020-11023) but these require specific input handling patterns not present in this application.
+- **Evidence**: `jquery-3.5.1.min.js`, `venobox/venobox.min.js` loaded in HTML source.
+- **Impact**: Libraries outdated but CVEs not directly exploitable in this context.
+- **Status**: Informational.
+
+---
+
+## Attack Chains Identified (Not Exploited)
+
+### Chain 1: Complaint XSS → Admin Account Takeover
+1. Extract CSRF token from complaint page
+2. Solve math CAPTCHA
+3. Insert complaint with XSS payload
+4. Admin searches for complaint
+5. innerHTML renders XSS
+6. Steal admin session cookie
+7. Access admin panel
+**Status**: BLOCKED by WAF (G.S.941100)
+
+### Chain 2: Upload → RCE
+1. Upload webshell via `/up/`
+2. Access uploaded file via web path
+3. Execute commands
+**Status**: BLOCKED — file not stored (honeypot)
+
+### Chain 3: Auth Bypass → Admin Panel
+1. Bypass phone verification
+2. Access admin panel
+**Status**: No bypass found
+
+---
+
+## Summary
+
+| # | Finding | Target | Severity | Status |
+|---|---------|--------|----------|--------|
+| 1 | Upload Honeypot | sandbox.securegateway.com | Info | Confirmed |
+| 2 | WAF Rule Disclosure | Both | Info | Confirmed |
+| 3 | Phone Auth No Bypass | sandbox.securegateway.com | Info | Confirmed |
+| 4 | Stored XSS via innerHTML | sandbox-royal.securegateway.com | Medium | BLOCKED by WAF |
+| 5 | CSRF + CAPTCHA Bypass | sandbox-royal.securegateway.com | Info | Confirmed |
+| 6 | 7 AJAX Endpoints | sandbox-royal.securegateway.com | Info | Confirmed |
+| 7 | Outdated Libraries | sandbox-royal.securegateway.com | Info | Confirmed |
+
+**Honest Assessment**: None of these findings are bounty-worthy as standalone findings. The program requires "full hack" (edit index page or download database). The most promising lead is the complaint stored XSS chain (ALSCO-04), but the WAF blocks all exploit attempts. We need a clean residential IP to continue testing.
+
+**What would make this bounty-worthy**:
+1. WAF bypass for G.S.941100 (angle brackets blocked)
+2. File upload path discovery (upload → RCE)
+3. Phone verification bypass (auth → admin panel)
+
+---
+*BLACK-STAMPED BY CT-002*
